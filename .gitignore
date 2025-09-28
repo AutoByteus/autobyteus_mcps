@@ -1,0 +1,28 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.installed.cfg
+*.egg
+# Environments
+.env
+.venv
+venv/
+ENV/
+
+# IDEs and editors
+.vscode/
+.idea/
+*.swp
+
+# Testing
+.pytest_cache/
+coverage.xml
+htmlcov/
+
+# Distribution builds
+build/
+dist/
+
+# macOS
+.DS_Store
