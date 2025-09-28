@@ -26,3 +26,24 @@ dist/
 
 # macOS
 .DS_Store
+
+
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+.python-version
+.DS_Store
+.cursor/rules/implementation_steps.md
+.cursor/rules/prd.md
+.benchmarks/
+
+# Cursor workspace
+.cursor/
