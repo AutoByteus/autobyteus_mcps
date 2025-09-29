@@ -1180,7 +1180,7 @@ def concatenate_videos(video_paths: list[str], output_video_path: str,
 
 @mcp.tool()
 def change_video_speed(video_path: str, output_video_path: str, speed_factor: float) -> str:
-    """Changes the playback speed of a video (and its audio).
+    """Changes the playback speed of a video (and its audio, if present).
 
     Args:
         video_path: Path to the input video file.
@@ -1199,50 +1199,50 @@ def change_video_speed(video_path: str, output_video_path: str, speed_factor: fl
         return f"Error: Input video file not found at {video_path}"
 
     try:
-        # Process atempo values (audio speed) - requires special handling for values outside 0.5-2.0 range
-        atempo_value = speed_factor
-        atempo_filters = []
-        
-        # Handle audio speed outside atempo's range (0.5-2.0)
-        if speed_factor < 0.5:
-            # For speed < 0.5, use multiple atempo=0.5 filters
-            while atempo_value < 0.5:
-                atempo_filters.append("atempo=0.5")
-                atempo_value *= 2  # After applying atempo=0.5, the remaining factor doubles
-            # Add the remaining factor if needed
-            if atempo_value < 0.99:  # A bit of buffer for floating point comparison
-                atempo_filters.append(f"atempo={atempo_value}")
-        elif speed_factor > 2.0:
-            # For speed > 2.0, use multiple atempo=2.0 filters
-            while atempo_value > 2.0:
-                atempo_filters.append("atempo=2.0")
-                atempo_value /= 2  # After applying atempo=2.0, the remaining factor halves
-            # Add the remaining factor if needed
-            if atempo_value > 1.01:  # A bit of buffer for floating point comparison
-                atempo_filters.append(f"atempo={atempo_value}")
-        else:
-            # For speed factors within range, just use one atempo filter
-            atempo_filters.append(f"atempo={speed_factor}")
-        
-        # Apply separate filters to video and audio streams
+        # Check if the media has an audio stream
+        props = _get_media_properties(video_path)
+        has_audio = props.get('has_audio', False)
+
+        # Apply speed change to video stream
         input_stream = ffmpeg.input(video_path)
         video = input_stream.video.setpts(f"{1.0/speed_factor}*PTS")
         
-        # Chain multiple audio filters if needed
-        audio = input_stream.audio
-        for filter_str in atempo_filters:
-            audio = audio.filter("atempo", speed_factor if filter_str == f"atempo={speed_factor}" else 
-                               0.5 if filter_str == "atempo=0.5" else 
-                               2.0 if filter_str == "atempo=2.0" else 
-                               float(filter_str.replace("atempo=", "")))
+        output_streams = [video]
+
+        if has_audio:
+            # Process atempo values for audio speed, handling values outside the 0.5-2.0 range
+            atempo_value = speed_factor
+            atempo_filters_values = []
+            
+            if speed_factor < 0.5:
+                while atempo_value < 0.5:
+                    atempo_filters_values.append(0.5)
+                    atempo_value *= 2
+                if atempo_value < 0.99:  # A bit of buffer for floating point comparison
+                    atempo_filters_values.append(atempo_value)
+            elif speed_factor > 2.0:
+                while atempo_value > 2.0:
+                    atempo_filters_values.append(2.0)
+                    atempo_value /= 2
+                if atempo_value > 1.01:  # A bit of buffer for floating point comparison
+                    atempo_filters_values.append(atempo_value)
+            else:
+                atempo_filters_values.append(speed_factor)
+            
+            # Chain multiple atempo filters if needed
+            audio = input_stream.audio
+            for val in atempo_filters_values:
+                audio = audio.filter("atempo", val)
+            
+            output_streams.append(audio)
         
         # Combine processed streams and output
-        output = ffmpeg.output(video, audio, output_video_path)
+        output = ffmpeg.output(*output_streams, output_video_path)
         output.run(capture_stdout=True, capture_stderr=True)
         
         return f"Video speed changed by factor {speed_factor} and saved to {output_video_path}"
-    except ffmpeg.Error as e:
-        error_message = e.stderr.decode('utf8') if e.stderr else str(e)
+    except (ffmpeg.Error, RuntimeError) as e:
+        error_message = e.stderr.decode('utf8') if hasattr(e, 'stderr') and e.stderr else str(e)
         return f"Error changing video speed: {error_message}"
     except Exception as e:
         return f"An unexpected error occurred while changing video speed: {str(e)}"
@@ -1367,6 +1367,132 @@ def remove_silence(media_path: str, output_media_path: str,
         return f"Error removing silence: {error_message}"
     except Exception as e:
         return f"An unexpected error occurred while removing silence: {str(e)}"
+
+@mcp.tool()
+def concatenate_audios(audio_paths: list[str], output_audio_path: str) -> str:
+    """Concatenates multiple audio files into a single output file.
+
+    This tool normalizes each audio clip to a consistent sample rate and channel layout before
+    concatenation to prevent errors.
+
+    Args:
+        audio_paths: A list of paths to the audio files to concatenate.
+        output_audio_path: The path to save the concatenated audio file.
+    
+    Returns:
+        A status message indicating success or failure.
+    """
+    audio_paths = [resolve_path(p) for p in audio_paths]
+    output_audio_path = resolve_path(output_audio_path)
+    
+    if not audio_paths:
+        return "Error: No audio paths provided for concatenation."
+        
+    for audio_path in audio_paths:
+        if not os.path.exists(audio_path):
+            return f"Error: Input audio file not found at {audio_path}"
+
+    temp_dir = tempfile.mkdtemp()
+    try:
+        normalized_clips = []
+        for i, path in enumerate(audio_paths):
+            # Normalize each clip to prevent issues with different sample rates/formats
+            normalized_path = os.path.join(temp_dir, f"norm_{i}.wav")
+            (
+                ffmpeg.input(path)
+                .output(normalized_path, ar=48000, ac=2, format='wav')
+                .run(capture_stdout=True, capture_stderr=True)
+            )
+            normalized_clips.append(ffmpeg.input(normalized_path))
+        
+        # Concatenate normalized clips
+        concatenated_audio = ffmpeg.concat(*normalized_clips, v=0, a=1)
+        
+        # Output the final concatenated file
+        concatenated_audio.output(output_audio_path).run(capture_stdout=True, capture_stderr=True)
+        
+        return f"Audios concatenated successfully to {output_audio_path}"
+
+    except ffmpeg.Error as e:
+        error_message = e.stderr.decode('utf8') if e.stderr else str(e)
+        return f"Error concatenating audios: {error_message}"
+    except Exception as e:
+        return f"An unexpected error occurred during audio concatenation: {str(e)}"
+    finally:
+        shutil.rmtree(temp_dir)
+
+@mcp.tool()
+def replace_audio_track(video_path: str, new_audio_path: str, output_video_path: str, match_duration_mode: str = 'shortest') -> str:
+    """Replaces a video's audio track with a new one, with options for handling duration mismatches.
+
+    Args:
+        video_path: Path to the source video file.
+        new_audio_path: Path to the new audio file that will replace the original audio.
+        output_video_path: Path to save the final video.
+        match_duration_mode (str, optional): How to handle duration differences. Defaults to 'shortest'.
+            - 'shortest': The output duration will match the shorter of the two inputs. This is fast
+                          as it can copy the video codec without re-encoding.
+            - 'stretch_video': The video's speed will be adjusted (slowed down or sped up) to
+                               perfectly match the new audio's duration. Requires video re-encoding.
+    
+    Returns:
+        A status message indicating success or failure.
+    """
+    video_path = resolve_path(video_path)
+    new_audio_path = resolve_path(new_audio_path)
+    output_video_path = resolve_path(output_video_path)
+
+    if not os.path.exists(video_path):
+        return f"Error: Input video file not found at {video_path}"
+    if not os.path.exists(new_audio_path):
+        return f"Error: New audio file not found at {new_audio_path}"
+
+    try:
+        if match_duration_mode not in ['shortest', 'stretch_video']:
+            return f"Error: Invalid match_duration_mode '{match_duration_mode}'. Must be 'shortest' or 'stretch_video'."
+
+        input_video = ffmpeg.input(video_path)
+        input_audio = ffmpeg.input(new_audio_path)
+        
+        if match_duration_mode == 'shortest':
+            # Use codec copy for speed, and -shortest flag to trim to the shorter input
+            (
+                ffmpeg.output(input_video.video, input_audio.audio, output_video_path, vcodec='copy', acodec='aac', shortest=None)
+                .run(capture_stdout=True, capture_stderr=True)
+            )
+            return f"Audio track replaced successfully. Output saved to {output_video_path} with duration matching the shorter input."
+
+        elif match_duration_mode == 'stretch_video':
+            # Get durations to calculate the speed adjustment factor
+            video_props = _get_media_properties(video_path)
+            audio_props = _get_media_properties(new_audio_path)
+            
+            video_duration = video_props.get('duration', 0.0)
+            audio_duration = audio_props.get('duration', 0.0)
+
+            if video_duration == 0:
+                return f"Error: Could not determine duration of video file {video_path}."
+            if audio_duration == 0:
+                return f"Error: Could not determine duration of audio file {new_audio_path}."
+                
+            speed_factor_pts = audio_duration / video_duration
+            
+            # Apply the setpts filter to stretch/compress the video
+            processed_video = input_video.video.filter('setpts', f"{speed_factor_pts}*PTS")
+            
+            # Output with the processed video and new audio. Requires re-encoding.
+            (
+                ffmpeg.output(processed_video, input_audio.audio, output_video_path, vcodec='libx264', acodec='aac')
+                .run(capture_stdout=True, capture_stderr=True)
+            )
+            return (f"Audio track replaced and video duration stretched to match. "
+                    f"Output saved to {output_video_path} with new duration of {audio_duration:.2f}s.")
+
+    except (ffmpeg.Error, RuntimeError) as e:
+        error_message = e.stderr.decode('utf8') if hasattr(e, 'stderr') and e.stderr else str(e)
+        return f"Error replacing audio track: {error_message}"
+    except Exception as e:
+        return f"An unexpected error occurred while replacing audio track: {str(e)}"
 
 # --- Phase 6: B-Roll and Basic Transitions ---
 
