@@ -914,6 +914,79 @@ def create_video_from_image_and_audio(image_path: str, audio_path: str, output_v
     except Exception as e:
         return f"An unexpected error occurred: {str(e)}"
 
+@mcp.tool()
+def extract_frame_from_video(video_path: str, output_image_path: str, frame_location: Union[str, float], image_quality: int = 2) -> str:
+    """Extracts a single frame from a video and saves it as an image.
+
+    Args:
+        video_path (str): The path to the input video file.
+        output_image_path (str): The path to save the output image (e.g., 'frame.png', 'frame.jpg').
+        frame_location (Union[str, float]): Specifies which frame to extract. Accepts:
+            - 'first': Extracts the very first frame of the video.
+            - 'last': Extracts the very last frame of the video.
+            - A timestamp string (e.g., '00:01:23.500').
+            - A number representing the time in seconds (e.g., 83.5).
+        image_quality (int, optional): The quality of the output image (for JPEG/PNG). 
+                                     A lower value is higher quality. Defaults to 2.
+
+    Returns:
+        A status message indicating success or failure.
+    """
+    video_path = resolve_path(video_path)
+    output_image_path = resolve_path(output_image_path)
+
+    try:
+        if not os.path.exists(video_path):
+            return f"Error: Input video file not found at {video_path}"
+
+        seek_time = None
+        
+        if isinstance(frame_location, str):
+            if frame_location.lower() == 'first':
+                seek_time = 0
+            elif frame_location.lower() == 'last':
+                props = _get_media_properties(video_path)
+                duration = props.get('duration', 0)
+                if duration <= 0.1: # For very short clips, just take the start
+                    seek_time = 0
+                else:
+                    # Seek to a moment just before the end to reliably get the last frame
+                    seek_time = duration - 0.1 
+            else:
+                # Assume it's a timestamp string 'HH:MM:SS'
+                seek_time = frame_location
+        elif isinstance(frame_location, (int, float)):
+            seek_time = frame_location
+        else:
+            return f"Error: Invalid frame_location type. Must be 'first', 'last', a timestamp string, or a number in seconds."
+
+        if seek_time is None:
+             return f"Error: Could not determine a valid seek time from frame_location '{frame_location}'."
+
+        # Verify seek_time is within bounds if it's a number
+        if isinstance(seek_time, (int, float)):
+             props = _get_media_properties(video_path)
+             duration = props.get('duration', 0)
+             if seek_time > duration:
+                 return f"Error: The specified time ({seek_time}s) is beyond the video duration ({duration}s)."
+             if seek_time < 0:
+                 return f"Error: The specified time ({seek_time}s) cannot be negative."
+
+        (
+            ffmpeg
+            .input(video_path, ss=seek_time)
+            .output(output_image_path, vframes=1, **{'q:v': image_quality})
+            .run(capture_stdout=True, capture_stderr=True, overwrite_output=True)
+        )
+        
+        return f"Frame successfully extracted from location '{frame_location}' and saved to {output_image_path}"
+
+    except (ffmpeg.Error, RuntimeError) as e:
+        error_message = e.stderr.decode('utf8') if hasattr(e, 'stderr') and e.stderr else str(e)
+        return f"Error extracting frame: {error_message}"
+    except Exception as e:
+        return f"An unexpected error occurred while extracting the frame: {str(e)}"
+
 # --- Phase 4: More Complex Editing & Basic AI Audio Features ---
 
 @mcp.tool()
