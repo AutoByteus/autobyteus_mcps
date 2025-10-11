@@ -10,7 +10,7 @@ import math
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 # Import the specific function we are testing
-from server import replace_audio_track
+from tools.composition import replace_audio_track
 
 # --- Test Constants ---
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "test_outputs")

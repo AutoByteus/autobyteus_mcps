@@ -9,11 +9,10 @@ import math
 # Add the parent directory to sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-# Import the mcp server functions from server.py
-from server import (
-    health_check,
-    extract_audio_from_video,
-    trim_video,
+# Import functions from their new locations
+from server import health_check
+from core import _parse_time_to_seconds
+from tools.properties import (
     convert_audio_properties,
     convert_video_properties,
     change_aspect_ratio,
@@ -30,16 +29,22 @@ from server import (
     set_video_audio_track_bitrate,
     set_video_audio_track_sample_rate,
     set_video_audio_track_channels,
-    add_subtitles,
-    add_text_overlay,
-    add_image_overlay,
+)
+from tools.editing import (
+    trim_video,
     concatenate_videos,
     change_video_speed,
     remove_silence,
+)
+from tools.composition import (
+    extract_audio_from_video,
+    add_subtitles,
+    add_text_overlay,
+    add_image_overlay,
     add_b_roll,
     add_basic_transitions,
-    _parse_time_to_seconds
 )
+
 
 # Path to the sample video file
 SAMPLE_VIDEO = os.path.join(os.path.dirname(__file__), "sample.mp4")

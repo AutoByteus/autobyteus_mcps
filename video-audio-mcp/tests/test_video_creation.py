@@ -9,8 +9,8 @@ import math
 # Add the parent directory to sys.path to allow importing from 'server'
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-# Import the specific function we are testing
-from server import create_video_from_image_and_audio
+# Import the specific function we are testing from its new location
+from tools.composition import create_video_from_image_and_audio
 
 # --- Test Constants ---
 SAMPLE_IMAGE = os.path.join(os.path.dirname(__file__), "sample.png")

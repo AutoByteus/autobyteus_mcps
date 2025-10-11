@@ -1,0 +1,333 @@
+import ffmpeg
+import os
+from typing import Union
+
+from core import mcp, resolve_path, _run_ffmpeg_with_fallback
+
+@mcp.tool()
+def get_media_duration(media_path: str) -> Union[float, str]:
+    """Gets the duration of a video or audio file in seconds.
+
+    Args:
+        media_path: The path to the input media file.
+    
+    Returns:
+        The duration in seconds as a float on success, or an error string on failure.
+    """
+    media_path = resolve_path(media_path)
+    try:
+        if not os.path.exists(media_path):
+            return f"Error: Input media file not found at {media_path}"
+        
+        probe = ffmpeg.probe(media_path)
+        duration = float(probe['format']['duration'])
+        return duration
+    except ffmpeg.Error as e:
+        error_message = e.stderr.decode('utf8') if e.stderr else str(e)
+        return f"Error probing media file: {error_message}"
+    except (KeyError, ValueError) as e:
+        return f"Error parsing duration from media file metadata: {str(e)}"
+    except Exception as e:
+        return f"An unexpected error occurred: {str(e)}"
+
+@mcp.tool()
+def convert_audio_properties(input_audio_path: str, output_audio_path: str, target_format: str, 
+                               bitrate: str = None, sample_rate: int = None, channels: int = None) -> str:
+    """Converts audio file format and ALL specified properties like bitrate, sample rate, and channels.
+
+    Args:
+        input_audio_path: Path to the source audio file.
+        output_audio_path: Path to save the converted audio file.
+        target_format: Desired output audio format (e.g., 'mp3', 'wav', 'aac').
+        bitrate: Target audio bitrate (e.g., '128k', '192k'). Optional.
+        sample_rate: Target audio sample rate in Hz (e.g., 44100, 48000). Optional.
+        channels: Number of audio channels (1 for mono, 2 for stereo). Optional.
+    Returns:
+        A status message indicating success or failure.
+    """
+    input_audio_path = resolve_path(input_audio_path)
+    output_audio_path = resolve_path(output_audio_path)
+    try:
+        stream = ffmpeg.input(input_audio_path)
+        kwargs = {}
+        if bitrate: 
+            kwargs['audio_bitrate'] = bitrate
+        if sample_rate: 
+            kwargs['ar'] = sample_rate
+        if channels: 
+            kwargs['ac'] = channels
+        kwargs['format'] = target_format
+
+        output_stream = stream.output(output_audio_path, **kwargs)
+        output_stream.run(capture_stdout=True, capture_stderr=True, overwrite_output=True)
+        return f"Audio converted successfully to {output_audio_path} with format {target_format} and specified properties."
+    except ffmpeg.Error as e:
+        error_message = e.stderr.decode('utf8') if e.stderr else str(e)
+        return f"Error converting audio properties: {error_message}"
+    except FileNotFoundError:
+        return f"Error: Input audio file not found at {input_audio_path}"
+    except Exception as e:
+        return f"An unexpected error occurred: {str(e)}"
+
+@mcp.tool()
+def convert_video_properties(input_video_path: str, output_video_path: str, target_format: str,
+                               resolution: str = None, video_codec: str = None, video_bitrate: str = None,
+                               frame_rate: int = None, audio_codec: str = None, audio_bitrate: str = None,
+                               audio_sample_rate: int = None, audio_channels: int = None) -> str:
+    """Converts video file format and ALL specified properties like resolution, codecs, bitrates, and frame rate.
+    Args listed in PRD.
+    Returns:
+        A status message indicating success or failure.
+    """
+    input_video_path = resolve_path(input_video_path)
+    output_video_path = resolve_path(output_video_path)
+    try:
+        stream = ffmpeg.input(input_video_path)
+        kwargs = {}
+        vf_filters = []
+
+        if resolution and resolution.lower() != 'preserve':
+            if 'x' in resolution: 
+                vf_filters.append(f"scale={resolution}")
+            else: 
+                vf_filters.append(f"scale=-2:{resolution}")
+        
+        if vf_filters:
+            kwargs['vf'] = ",".join(vf_filters)
+
+        if video_codec: kwargs['vcodec'] = video_codec
+        if video_bitrate: kwargs['video_bitrate'] = video_bitrate
+        if frame_rate: kwargs['r'] = frame_rate
+        if audio_codec: kwargs['acodec'] = audio_codec
+        if audio_bitrate: kwargs['audio_bitrate'] = audio_bitrate
+        if audio_sample_rate: kwargs['ar'] = audio_sample_rate
+        if audio_channels: kwargs['ac'] = audio_channels
+        kwargs['format'] = target_format
+
+        output_stream = stream.output(output_video_path, **kwargs)
+        output_stream.run(capture_stdout=True, capture_stderr=True, overwrite_output=True)
+        return f"Video converted successfully to {output_video_path} with format {target_format} and specified properties."
+    except ffmpeg.Error as e:
+        error_message = e.stderr.decode('utf8') if e.stderr else str(e)
+        return f"Error converting video properties: {error_message}"
+    except FileNotFoundError:
+        return f"Error: Input video file not found at {input_video_path}"
+    except Exception as e:
+        return f"An unexpected error occurred: {str(e)}"
+
+@mcp.tool()
+def change_aspect_ratio(video_path: str, output_video_path: str, target_aspect_ratio: str, 
+                          resize_mode: str = 'pad', padding_color: str = 'black') -> str:
+    """Changes the aspect ratio of a video, using padding or cropping.
+    Args listed in PRD.
+    Returns:
+        A status message indicating success or failure.
+    """
+    video_path = resolve_path(video_path)
+    output_video_path = resolve_path(output_video_path)
+    try:
+        probe = ffmpeg.probe(video_path)
+        video_stream_info = next((stream for stream in probe['streams'] if stream['codec_type'] == 'video'), None)
+        if not video_stream_info:
+            return "Error: No video stream found in the input file."
+
+        original_width = int(video_stream_info['width'])
+        original_height = int(video_stream_info['height'])
+
+        num, den = map(int, target_aspect_ratio.split(':'))
+        target_ar_val = num / den
+        original_ar_val = original_width / original_height
+
+        vf_filter = ""
+        
+        if resize_mode == 'pad':
+            if abs(original_ar_val - target_ar_val) < 1e-4:
+                try:
+                    ffmpeg.input(video_path).output(output_video_path, c='copy').run(capture_stdout=True, capture_stderr=True, overwrite_output=True)
+                    return f"Video aspect ratio already matches. Copied to {output_video_path}."
+                except ffmpeg.Error:
+                    ffmpeg.input(video_path).output(output_video_path).run(capture_stdout=True, capture_stderr=True, overwrite_output=True)
+                    return f"Video aspect ratio already matches. Re-encoded to {output_video_path}."
+            
+            if original_ar_val > target_ar_val: 
+                final_w = int(original_height * target_ar_val)
+                final_h = original_height
+                vf_filter = f"scale={final_w}:{final_h}:force_original_aspect_ratio=decrease,pad={final_w}:{final_h}:(ow-iw)/2:(oh-ih)/2:{padding_color}"
+            else: 
+                final_w = original_width
+                final_h = int(original_width / target_ar_val)
+                vf_filter = f"scale={final_w}:{final_h}:force_original_aspect_ratio=decrease,pad={final_w}:{final_h}:(ow-iw)/2:(oh-ih)/2:{padding_color}"
+
+        elif resize_mode == 'crop':
+            if abs(original_ar_val - target_ar_val) < 1e-4:
+                try:
+                    ffmpeg.input(video_path).output(output_video_path, c='copy').run(capture_stdout=True, capture_stderr=True, overwrite_output=True)
+                    return f"Video aspect ratio already matches. Copied to {output_video_path}."
+                except ffmpeg.Error:
+                    ffmpeg.input(video_path).output(output_video_path).run(capture_stdout=True, capture_stderr=True, overwrite_output=True)
+                    return f"Video aspect ratio already matches. Re-encoded to {output_video_path}."
+            
+            if original_ar_val > target_ar_val: 
+                new_width = int(original_height * target_ar_val)
+                vf_filter = f"crop={new_width}:{original_height}:(iw-{new_width})/2:0"
+            else: 
+                new_height = int(original_width / target_ar_val)
+                vf_filter = f"crop={original_width}:{new_height}:0:(ih-{new_height})/2"
+        else:
+            return f"Error: Invalid resize_mode '{resize_mode}'. Must be 'pad' or 'crop'."
+        
+        try:
+            ffmpeg.input(video_path).output(output_video_path, vf=vf_filter, acodec='copy').run(capture_stdout=True, capture_stderr=True, overwrite_output=True)
+            return f"Video aspect ratio changed (audio copy) to {target_aspect_ratio} using {resize_mode}. Saved to {output_video_path}"
+        except ffmpeg.Error as e_acopy:
+            try:
+                ffmpeg.input(video_path).output(output_video_path, vf=vf_filter).run(capture_stdout=True, capture_stderr=True, overwrite_output=True)
+                return f"Video aspect ratio changed (audio re-encoded) to {target_aspect_ratio} using {resize_mode}. Saved to {output_video_path}"
+            except ffmpeg.Error as e_recode_all:
+                err_acopy_msg = e_acopy.stderr.decode('utf8') if e_acopy.stderr else str(e_acopy)
+                err_recode_msg = e_recode_all.stderr.decode('utf8') if e_recode_all.stderr else str(e_recode_all)
+                return f"Error changing aspect ratio. Audio copy attempt failed: {err_acopy_msg}. Full re-encode attempt also failed: {err_recode_msg}."
+
+    except ffmpeg.Error as e:
+        error_message = e.stderr.decode('utf8') if e.stderr else str(e)
+        return f"Error changing aspect ratio: {error_message}"
+    except FileNotFoundError:
+        return f"Error: Input video file not found at {video_path}"
+    except ValueError:
+        return f"Error: Invalid target_aspect_ratio format. Expected 'num:den' (e.g., '16:9')."
+    except Exception as e:
+        return f"An unexpected error occurred: {str(e)}"
+
+@mcp.tool()
+def convert_audio_format(input_audio_path: str, output_audio_path: str, target_format: str) -> str:
+    """Converts an audio file to the specified target format."""
+    input_audio_path = resolve_path(input_audio_path)
+    output_audio_path = resolve_path(output_audio_path)
+    try:
+        ffmpeg.input(input_audio_path).output(output_audio_path, format=target_format).run(capture_stdout=True, capture_stderr=True, overwrite_output=True)
+        return f"Audio format converted to {target_format} and saved to {output_audio_path}"
+    except ffmpeg.Error as e:
+        error_message = e.stderr.decode('utf8') if e.stderr else str(e)
+        return f"Error converting audio format: {error_message}"
+    except FileNotFoundError:
+        return f"Error: Input audio file not found at {input_audio_path}"
+    except Exception as e:
+        return f"An unexpected error occurred: {str(e)}"
+
+@mcp.tool()
+def set_audio_bitrate(input_audio_path: str, output_audio_path: str, bitrate: str) -> str:
+    """Sets the bitrate for an audio file."""
+    input_audio_path = resolve_path(input_audio_path)
+    output_audio_path = resolve_path(output_audio_path)
+    try:
+        ffmpeg.input(input_audio_path).output(output_audio_path, audio_bitrate=bitrate).run(capture_stdout=True, capture_stderr=True, overwrite_output=True)
+        return f"Audio bitrate set to {bitrate} and saved to {output_audio_path}"
+    except ffmpeg.Error as e:
+        error_message = e.stderr.decode('utf8') if e.stderr else str(e)
+        return f"Error setting audio bitrate: {error_message}"
+    except FileNotFoundError:
+        return f"Error: Input audio file not found at {input_audio_path}"
+    except Exception as e:
+        return f"An unexpected error occurred: {str(e)}"
+
+@mcp.tool()
+def set_audio_sample_rate(input_audio_path: str, output_audio_path: str, sample_rate: int) -> str:
+    """Sets the sample rate for an audio file."""
+    input_audio_path = resolve_path(input_audio_path)
+    output_audio_path = resolve_path(output_audio_path)
+    try:
+        ffmpeg.input(input_audio_path).output(output_audio_path, ar=sample_rate).run(capture_stdout=True, capture_stderr=True, overwrite_output=True)
+        return f"Audio sample rate set to {sample_rate} Hz and saved to {output_audio_path}"
+    except ffmpeg.Error as e:
+        error_message = e.stderr.decode('utf8') if e.stderr else str(e)
+        return f"Error setting audio sample rate: {error_message}"
+    except FileNotFoundError:
+        return f"Error: Input audio file not found at {input_audio_path}"
+    except Exception as e:
+        return f"An unexpected error occurred: {str(e)}"
+
+@mcp.tool()
+def set_audio_channels(input_audio_path: str, output_audio_path: str, channels: int) -> str:
+    """Sets the number of channels for an audio file (1 for mono, 2 for stereo)."""
+    input_audio_path = resolve_path(input_audio_path)
+    output_audio_path = resolve_path(output_audio_path)
+    try:
+        ffmpeg.input(input_audio_path).output(output_audio_path, ac=channels).run(capture_stdout=True, capture_stderr=True, overwrite_output=True)
+        return f"Audio channels set to {channels} and saved to {output_audio_path}"
+    except ffmpeg.Error as e:
+        error_message = e.stderr.decode('utf8') if e.stderr else str(e)
+        return f"Error setting audio channels: {error_message}"
+    except FileNotFoundError:
+        return f"Error: Input audio file not found at {input_audio_path}"
+    except Exception as e:
+        return f"An unexpected error occurred: {str(e)}"
+
+@mcp.tool()
+def convert_video_format(input_video_path: str, output_video_path: str, target_format: str) -> str:
+    """Converts a video file to the specified target format, attempting to copy codecs first."""
+    primary_kwargs = {'format': target_format, 'vcodec': 'copy', 'acodec': 'copy'}
+    fallback_kwargs = {'format': target_format}
+    return _run_ffmpeg_with_fallback(input_video_path, output_video_path, primary_kwargs, fallback_kwargs)
+
+@mcp.tool()
+def set_video_resolution(input_video_path: str, output_video_path: str, resolution: str) -> str:
+    """Sets the resolution of a video, attempting to copy the audio stream."""
+    vf_filters = []
+    if 'x' in resolution:
+        vf_filters.append(f"scale={resolution}")
+    else:
+        vf_filters.append(f"scale=-2:{resolution}")
+    vf_filter_str = ",".join(vf_filters)
+    
+    primary_kwargs = {'vf': vf_filter_str, 'acodec': 'copy'}
+    fallback_kwargs = {'vf': vf_filter_str}
+    return _run_ffmpeg_with_fallback(input_video_path, output_video_path, primary_kwargs, fallback_kwargs)
+
+@mcp.tool()
+def set_video_codec(input_video_path: str, output_video_path: str, video_codec: str) -> str:
+    """Sets the video codec of a video, attempting to copy the audio stream."""
+    primary_kwargs = {'vcodec': video_codec, 'acodec': 'copy'}
+    fallback_kwargs = {'vcodec': video_codec}
+    return _run_ffmpeg_with_fallback(input_video_path, output_video_path, primary_kwargs, fallback_kwargs)
+
+@mcp.tool()
+def set_video_bitrate(input_video_path: str, output_video_path: str, video_bitrate: str) -> str:
+    """Sets the video bitrate of a video, attempting to copy the audio stream."""
+    primary_kwargs = {'video_bitrate': video_bitrate, 'acodec': 'copy'}
+    fallback_kwargs = {'video_bitrate': video_bitrate}
+    return _run_ffmpeg_with_fallback(input_video_path, output_video_path, primary_kwargs, fallback_kwargs)
+
+@mcp.tool()
+def set_video_frame_rate(input_video_path: str, output_video_path: str, frame_rate: int) -> str:
+    """Sets the frame rate of a video, attempting to copy the audio stream."""
+    primary_kwargs = {'r': frame_rate, 'acodec': 'copy'}
+    fallback_kwargs = {'r': frame_rate}
+    return _run_ffmpeg_with_fallback(input_video_path, output_video_path, primary_kwargs, fallback_kwargs)
+
+@mcp.tool()
+def set_video_audio_track_codec(input_video_path: str, output_video_path: str, audio_codec: str) -> str:
+    """Sets the audio codec of a video's audio track, attempting to copy the video stream."""
+    primary_kwargs = {'acodec': audio_codec, 'vcodec': 'copy'}
+    fallback_kwargs = {'acodec': audio_codec}
+    return _run_ffmpeg_with_fallback(input_video_path, output_video_path, primary_kwargs, fallback_kwargs)
+
+@mcp.tool()
+def set_video_audio_track_bitrate(input_video_path: str, output_video_path: str, audio_bitrate: str) -> str:
+    """Sets the audio bitrate of a video's audio track, attempting to copy the video stream."""
+    primary_kwargs = {'audio_bitrate': audio_bitrate, 'vcodec': 'copy'}
+    fallback_kwargs = {'audio_bitrate': audio_bitrate}
+    return _run_ffmpeg_with_fallback(input_video_path, output_video_path, primary_kwargs, fallback_kwargs)
+
+@mcp.tool()
+def set_video_audio_track_sample_rate(input_video_path: str, output_video_path: str, audio_sample_rate: int) -> str:
+    """Sets the audio sample rate of a video's audio track, attempting to copy the video stream."""
+    primary_kwargs = {'ar': audio_sample_rate, 'vcodec': 'copy'}
+    fallback_kwargs = {'ar': audio_sample_rate}
+    return _run_ffmpeg_with_fallback(input_video_path, output_video_path, primary_kwargs, fallback_kwargs)
+
+@mcp.tool()
+def set_video_audio_track_channels(input_video_path: str, output_video_path: str, audio_channels: int) -> str:
+    """Sets the number of audio channels of a video's audio track, attempting to copy the video stream."""
+    primary_kwargs = {'ac': audio_channels, 'vcodec': 'copy'}
+    fallback_kwargs = {'ac': audio_channels}
+    return _run_ffmpeg_with_fallback(input_video_path, output_video_path, primary_kwargs, fallback_kwargs)

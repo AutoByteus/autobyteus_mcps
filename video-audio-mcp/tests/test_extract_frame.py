@@ -8,8 +8,7 @@ import subprocess
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 # Import the specific function we are testing
-from server import extract_frame_from_video
-
+from tools.composition import extract_frame_from_video 
 # --- Test Constants ---
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "test_outputs")
 TEST_FILES_DIR = os.path.dirname(__file__)
