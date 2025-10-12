@@ -1,0 +1,32 @@
+[project]
+name = "neutts-air-mcp"
+version = "0.1.0"
+description = "MCP server wrapping Neuphonic NeuTTS Air for on-device TTS with instant voice cloning"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+"mcp[cli]>=1.9.0",
+"soundfile>=0.12.1",
+"phonemizer>=3.3.0",
+"torch>=2.3.0",         # choose a CUDA/MPS build suitable for your system
+"torchaudio>=2.3.0",
+"typer>=0.12.5",
+"pydantic>=2.10.0",
+
+# Upstream Python package from Git
+
+"neuttsair @ git+[https://github.com/neuphonic/neutts-air](https://github.com/neuphonic/neutts-air)",
+]
+
+[project.optional-dependencies]
+test = [
+"pytest>=8.3.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+addopts = "-ra"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
