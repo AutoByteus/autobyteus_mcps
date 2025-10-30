@@ -6,13 +6,13 @@ from typing import Literal, Sequence, cast
 from typing_extensions import TypedDict
 
 from mcp.server.fastmcp import Context, FastMCP
-from pypdf import PdfReader
+from pypdf import PdfReader, PdfWriter
 import fitz
 
 DEFAULT_SERVER_NAME = "pdf-mcp"
 DEFAULT_INSTRUCTIONS = (
-    "Expose read-only tools for viewing the text content and metadata of PDF files. "
-    "All page numbers are 1-indexed."
+    "Expose tools for inspecting, rendering, and combining PDF files. "
+    "All page numbers are 1-indexed unless otherwise specified."
 )
 
 def _resolve_pdf_path(candidate: str) -> Path:
@@ -27,6 +27,24 @@ def _resolve_pdf_path(candidate: str) -> Path:
 
     if resolved.suffix.lower() != ".pdf":
         raise ValueError("Only PDF files are supported")
+
+    return resolved
+
+
+def _resolve_output_path(candidate: str) -> Path:
+    raw_path = Path(candidate).expanduser()
+    if not raw_path.is_absolute():
+        raise ValueError("Output path must be absolute")
+
+    resolved = raw_path.resolve(strict=False)
+    if resolved.suffix.lower() != ".pdf":
+        raise ValueError("Output file must have a .pdf extension")
+
+    parent = resolved.parent
+    if not parent.exists():
+        raise FileNotFoundError(f"Output directory does not exist: {parent}")
+    if not parent.is_dir():
+        raise NotADirectoryError(f"Output directory is not a directory: {parent}")
 
     return resolved
 
@@ -86,6 +104,17 @@ class RenderPdfResult(TypedDict):
     format: Literal["png"]
     output_dir: str
     pages: list[RenderedPage]
+
+
+class MergePdfSource(TypedDict):
+    path: str
+    total_pages: int
+
+
+class MergePdfResult(TypedDict):
+    output_path: str
+    total_pages: int
+    sources: list[MergePdfSource]
 
 @dataclass(slots=True)
 class ServerConfig:
@@ -171,6 +200,52 @@ def create_server(config: ServerConfig | None = None) -> FastMCP:
             title=title,
             author=author,
             subject=subject,
+        )
+
+    @server.tool(
+        name="merge_pdf_files",
+        title="Merge PDF files",
+        description=(
+            "Combine multiple PDF files into a single document. Example: "
+            "{\"file_paths\": [\"/docs/one.pdf\", \"/docs/two.pdf\"], "
+            "\"output_path\": \"/docs/combined.pdf\"}."
+        ),
+        structured_output=True,
+    )
+    async def merge_pdf_files(
+        file_paths: Sequence[str],
+        output_path: str,
+        *,
+        context: Context,
+    ) -> MergePdfResult:
+        if not file_paths:
+            raise ValueError("file_paths must include at least one PDF")
+
+        resolved_sources = [_resolve_pdf_path(path) for path in file_paths]
+        resolved_output = _resolve_output_path(output_path)
+
+        writer = PdfWriter()
+        sources: list[MergePdfSource] = []
+
+        total_inputs = len(resolved_sources)
+        for idx, source_path in enumerate(resolved_sources, start=1):
+            reader = PdfReader(str(source_path))
+            writer.append(reader)
+            pages = len(reader.pages)
+            sources.append(MergePdfSource(path=str(source_path), total_pages=pages))
+            await context.report_progress(idx, total_inputs, f"Merged {source_path.name}")
+            reader.close()
+
+        with resolved_output.open("wb") as handle:
+            writer.write(handle)
+        writer.close()
+
+        total_pages = sum(source["total_pages"] for source in sources)
+
+        return MergePdfResult(
+            output_path=str(resolved_output),
+            total_pages=total_pages,
+            sources=sources,
         )
 
     @server.tool(

@@ -6,7 +6,7 @@ from pathlib import Path
 
 from mcp.client.session import ClientSession
 from mcp.shared.message import SessionMessage
-from pypdf import PdfWriter
+from pypdf import PdfReader, PdfWriter
 from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 
 from pdf_mcp.server import create_server
@@ -105,6 +105,44 @@ async def test_pdf_metadata(tmp_path):
         assert structured is not None
         assert structured["total_pages"] == 1
         assert structured["path"].endswith("meta.pdf")
+
+    await _run_with_session(server, run_client)
+
+
+@pytest.mark.anyio
+async def test_merge_pdf_files(tmp_path):
+    first_pdf = tmp_path / "first.pdf"
+    second_pdf = tmp_path / "second.pdf"
+    output_pdf = tmp_path / "merged.pdf"
+    _create_pdf(first_pdf, ["First"])
+    _create_pdf(second_pdf, ["Second", "Third"])
+
+    server = create_server()
+
+    async def run_client(session: ClientSession) -> None:
+        result = await session.call_tool(
+            "merge_pdf_files",
+            {
+                "file_paths": [str(first_pdf), str(second_pdf)],
+                "output_path": str(output_pdf),
+            },
+        )
+        assert not result.isError
+        structured = result.structuredContent
+        assert structured is not None
+        assert structured["output_path"] == str(output_pdf)
+        assert structured["total_pages"] == 3
+        assert structured["sources"] == [
+            {"path": str(first_pdf), "total_pages": 1},
+            {"path": str(second_pdf), "total_pages": 2},
+        ]
+        assert output_pdf.is_file()
+
+        reader = PdfReader(str(output_pdf))
+        try:
+            assert len(reader.pages) == 3
+        finally:
+            reader.close()
 
     await _run_with_session(server, run_client)
 
