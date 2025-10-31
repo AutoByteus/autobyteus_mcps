@@ -116,6 +116,34 @@ class MergePdfResult(TypedDict):
     total_pages: int
     sources: list[MergePdfSource]
 
+
+PageNumberPosition = Literal[
+    "top-left",
+    "top-center",
+    "top-right",
+    "bottom-left",
+    "bottom-center",
+    "bottom-right",
+]
+
+
+class NumberedPage(TypedDict):
+    page: int
+    number: int
+
+
+class AddPageNumbersResult(TypedDict):
+    path: str
+    output_path: str
+    total_pages: int
+    position: PageNumberPosition
+    font_size: float
+    margin: float
+    prefix: str
+    suffix: str
+    start_number: int
+    pages: list[NumberedPage]
+
 @dataclass(slots=True)
 class ServerConfig:
     name: str = DEFAULT_SERVER_NAME
@@ -246,6 +274,134 @@ def create_server(config: ServerConfig | None = None) -> FastMCP:
             output_path=str(resolved_output),
             total_pages=total_pages,
             sources=sources,
+        )
+
+    @server.tool(
+        name="add_pdf_page_numbers",
+        title="Add PDF page numbers",
+        description=(
+            "Write page numbers into a copy of the PDF. Example: {\"file_path\": "
+            "\"/docs/report.pdf\", \"output_path\": \"/docs/report-numbered.pdf\", "
+            "\"position\": \"bottom-center\"}."
+        ),
+        structured_output=True,
+    )
+    async def add_pdf_page_numbers(
+        file_path: str,
+        output_path: str,
+        pages: Sequence[int] | None = None,
+        start_page: int | None = None,
+        end_page: int | None = None,
+        start_number: int | None = None,
+        prefix: str | None = None,
+        suffix: str | None = None,
+        position: PageNumberPosition = "bottom-center",
+        font_size: float | None = None,
+        margin: float | None = None,
+        *,
+        context: Context,
+    ) -> AddPageNumbersResult:
+        resolved_path = _resolve_pdf_path(file_path)
+        resolved_output = _resolve_output_path(output_path)
+
+        prefix_text = prefix if prefix is not None else ""
+        suffix_text = suffix if suffix is not None else ""
+        font_size_value = font_size if font_size is not None else 12.0
+        margin_value = margin if margin is not None else 36.0
+        start_number_value = start_number if start_number is not None else 1
+
+        if font_size_value <= 0:
+            raise ValueError("font_size must be greater than zero")
+        if margin_value < 0:
+            raise ValueError("margin must be zero or greater")
+
+        document = fitz.open(str(resolved_path))
+        try:
+            total_pages = document.page_count
+            normalized_pages = _collect_requested_pages(total_pages, pages, start_page, end_page)
+
+            position_map: dict[PageNumberPosition, tuple[str, str]] = {
+                "top-left": ("top", "left"),
+                "top-center": ("top", "center"),
+                "top-right": ("top", "right"),
+                "bottom-left": ("bottom", "left"),
+                "bottom-center": ("bottom", "center"),
+                "bottom-right": ("bottom", "right"),
+            }
+
+            if position not in position_map:
+                raise ValueError(
+                    "position must be one of: top-left, top-center, top-right, bottom-left, bottom-center, bottom-right"
+                )
+
+            vertical, horizontal = position_map[position]
+
+            numbered_pages: list[NumberedPage] = []
+            total_requested = len(normalized_pages)
+            current_number = start_number_value
+
+            for idx, page_number in enumerate(normalized_pages, start=1):
+                page = document.load_page(page_number - 1)
+                rect = page.rect
+                page.wrap_contents()
+
+                usable_width = rect.x1 - rect.x0 - (2 * margin_value)
+                if usable_width <= 0:
+                    raise ValueError("margin is too large for the page width")
+
+                usable_height = rect.y1 - rect.y0 - (2 * margin_value)
+                if usable_height <= 0:
+                    raise ValueError("margin is too large for the page height")
+
+                text = f"{prefix_text}{current_number}{suffix_text}"
+                text_width = fitz.get_text_length(text, fontname="helv", fontsize=font_size_value)
+                if text_width > usable_width:
+                    raise ValueError("page number text does not fit within the available width; reduce prefix/suffix or margin")
+
+                if horizontal == "left":
+                    x = rect.x0 + margin_value
+                elif horizontal == "center":
+                    x = rect.x0 + margin_value + (usable_width - text_width) / 2
+                else:  # right
+                    x = rect.x1 - margin_value - text_width
+
+                if vertical == "top":
+                    baseline_y = rect.y0 + margin_value + font_size_value
+                    if baseline_y > rect.y1 - margin_value:
+                        raise ValueError("font_size and margin leave no vertical space at the top")
+                else:
+                    baseline_y = rect.y1 - margin_value
+                    if baseline_y - font_size_value < rect.y0 + margin_value and rect.y1 - rect.y0 > 0:
+                        raise ValueError("font_size and margin leave no vertical space at the bottom")
+
+                page.insert_text(
+                    fitz.Point(x, baseline_y),
+                    text,
+                    fontsize=font_size_value,
+                    fontname="helv",
+                    color=(0, 0, 0),
+                    overlay=True,
+                )
+
+                numbered_pages.append(NumberedPage(page=page_number, number=current_number))
+                await context.report_progress(idx, total_requested, f"Numbered page {page_number}")
+                current_number += 1
+
+            document.save(str(resolved_output))
+        finally:
+            document.close()
+
+        return AddPageNumbersResult(
+            path=str(resolved_path),
+            output_path=str(resolved_output),
+            total_pages=total_pages,
+            position=position,
+            font_size=font_size_value,
+            margin=margin_value,
+            prefix=prefix_text,
+            suffix=suffix_text,
+            start_number=start_number_value,
+            pages=numbered_pages,
         )
 
     @server.tool(

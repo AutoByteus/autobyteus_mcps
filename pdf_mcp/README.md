@@ -6,6 +6,7 @@ A Python MCP server that exposes tools for reading PDF metadata and extracting t
 - `read_pdf_pages`: return structured text content for specific PDF pages or ranges (1-indexed).
 - `pdf_metadata`: fetch page counts and document metadata (title, author, subject).
 - `render_pdf_pages`: rasterise selected pages to PNG images stored next to the source PDF.
+- `add_pdf_page_numbers`: write page numbers into a copy of the PDF with configurable placement.
 - Tested end-to-end with an in-process MCP client.
 
 ## Installation
@@ -59,6 +60,18 @@ All tool calls must supply an absolute path to the target PDF file.
   "tool": "pdf_metadata",
   "input": {
     "file_path": "/docs/report.pdf"
+  }
+}
+```
+
+```json
+{
+  "tool": "add_pdf_page_numbers",
+  "input": {
+    "file_path": "/docs/report.pdf",
+    "output_path": "/docs/report-numbered.pdf",
+    "position": "bottom-center",
+    "prefix": "Page "
   }
 }
 ```

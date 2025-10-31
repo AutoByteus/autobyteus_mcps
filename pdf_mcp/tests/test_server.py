@@ -8,6 +8,7 @@ from mcp.client.session import ClientSession
 from mcp.shared.message import SessionMessage
 from pypdf import PdfReader, PdfWriter
 from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
+import fitz
 
 from pdf_mcp.server import create_server
 
@@ -174,5 +175,55 @@ async def test_render_pdf_pages(tmp_path):
         assert image_path.parent.resolve() == pdf_path.parent.resolve()
         assert image_path.suffix == ".png"
         assert image_path.stat().st_size > 0
+
+    await _run_with_session(server, run_client)
+
+
+@pytest.mark.anyio
+async def test_add_pdf_page_numbers(tmp_path):
+    source_pdf = tmp_path / "numberme.pdf"
+    output_pdf = tmp_path / "numbered.pdf"
+    _create_pdf(source_pdf, ["First", "Second", "Third"])
+
+    server = create_server()
+
+    async def run_client(session: ClientSession) -> None:
+        result = await session.call_tool(
+            "add_pdf_page_numbers",
+            {
+                "file_path": str(source_pdf),
+                "output_path": str(output_pdf),
+                "start_page": 2,
+                "end_page": 3,
+                "start_number": 5,
+                "prefix": "Page ",
+                "suffix": ")",
+                "position": "top-right",
+            },
+        )
+        assert not result.isError
+        structured = result.structuredContent
+        assert structured is not None
+        assert structured["output_path"] == str(output_pdf)
+        assert structured["pages"] == [
+            {"page": 2, "number": 5},
+            {"page": 3, "number": 6},
+        ]
+        assert structured["position"] == "top-right"
+        assert structured["font_size"] == 12.0
+        assert structured["margin"] == 36.0
+        assert output_pdf.is_file()
+
+        document = fitz.open(str(output_pdf))
+        try:
+            page_one_text = document.load_page(0).get_text()
+            page_two_text = document.load_page(1).get_text()
+            page_three_text = document.load_page(2).get_text()
+        finally:
+            document.close()
+
+        assert "Page 5)" not in page_one_text
+        assert "Page 5)" in page_two_text
+        assert "Page 6)" in page_three_text
 
     await _run_with_session(server, run_client)
