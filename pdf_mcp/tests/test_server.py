@@ -3,6 +3,7 @@ from __future__ import annotations
 import anyio
 import pytest
 from pathlib import Path
+import base64
 
 from mcp.client.session import ClientSession
 from mcp.shared.message import SessionMessage
@@ -180,6 +181,54 @@ async def test_render_pdf_pages(tmp_path):
 
 
 @pytest.mark.anyio
+async def test_image_to_pdf_page(tmp_path):
+    image_path = tmp_path / "pixel.png"
+    output_pdf = tmp_path / "pixel.pdf"
+
+    # 1x1 transparent PNG
+    png_bytes = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9YzyuQcAAAAASUVORK5CYII="
+    )
+    image_path.write_bytes(png_bytes)
+
+    server = create_server()
+
+    async def run_client(session: ClientSession) -> None:
+        result = await session.call_tool(
+            "image_to_pdf_page",
+            {
+                "image_path": str(image_path),
+                "output_path": str(output_pdf),
+            },
+        )
+
+        assert not result.isError
+        structured = result.structuredContent
+        assert structured is not None
+        assert structured["output_path"] == str(output_pdf)
+        assert structured["image_path"] == str(image_path)
+        assert structured["width"] == 1.0
+        assert structured["height"] == 1.0
+        assert output_pdf.is_file()
+
+        reader = PdfReader(str(output_pdf))
+        try:
+            assert len(reader.pages) == 1
+        finally:
+            reader.close()
+
+        document = fitz.open(str(output_pdf))
+        try:
+            page = document.load_page(0)
+            assert page.rect.width == 1
+            assert page.rect.height == 1
+        finally:
+            document.close()
+
+    await _run_with_session(server, run_client)
+
+
+@pytest.mark.anyio
 async def test_add_pdf_page_numbers(tmp_path):
     source_pdf = tmp_path / "numberme.pdf"
     output_pdf = tmp_path / "numbered.pdf"
@@ -225,5 +274,62 @@ async def test_add_pdf_page_numbers(tmp_path):
         assert "Page 5)" not in page_one_text
         assert "Page 5)" in page_two_text
         assert "Page 6)" in page_three_text
+
+    await _run_with_session(server, run_client)
+
+
+@pytest.mark.anyio
+async def test_create_pdf_catalog(tmp_path):
+    source_pdf = tmp_path / "stories.pdf"
+    output_pdf = tmp_path / "stories-with-catalog.pdf"
+    texts = ["Cover"] + [f"Story One Page {i}" for i in range(1, 6)] + [f"Story Two Page {i}" for i in range(1, 6)]
+    _create_pdf(source_pdf, texts)
+
+    server = create_server()
+
+    async def run_client(session: ClientSession) -> None:
+        result = await session.call_tool(
+            "create_pdf_catalog",
+            {
+                "file_path": str(source_pdf),
+                "output_path": str(output_pdf),
+                "entries": [
+                    {"title": "Story One", "page_count": 5},
+                    {"title": "Story Two", "page_count": 5},
+                ],
+                "insert_after_page": 1,
+                "first_story_page": 2,
+                "heading": "Stories",
+            },
+        )
+        assert not result.isError
+        structured = result.structuredContent
+        assert structured is not None
+        assert structured["catalog_page"] == 2
+        assert structured["total_pages"] == len(texts) + 1
+        assert structured["entries"] == [
+            {"title": "Story One", "page": 3, "original_page": 2},
+            {"title": "Story Two", "page": 8, "original_page": 7},
+        ]
+
+        document = fitz.open(str(output_pdf))
+        try:
+            assert document.page_count == len(texts) + 1
+            cover_text = document.load_page(0).get_text()
+            catalog_page = document.load_page(1)
+            story_one_page = document.load_page(2)
+
+            assert "Cover" in cover_text
+            catalog_text = catalog_page.get_text()
+            assert "Stories" in catalog_text
+            assert "Story One" in catalog_text
+            assert "Story Two" in catalog_text
+            assert "Story One Page 1" in story_one_page.get_text()
+
+            links = catalog_page.get_links()
+            assert len(links) == 2
+            assert sorted(link["page"] for link in links) == [2, 7]
+        finally:
+            document.close()
 
     await _run_with_session(server, run_client)
