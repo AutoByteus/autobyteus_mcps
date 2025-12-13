@@ -228,6 +228,26 @@ For easier distribution, you can also run via npx if packaged:
 
 "Add subtitles to this video with custom styling"
 → Uses: add_subtitles
+
+#### Subtitle best practices
+- The tool auto-wraps long lines (including CJK without spaces) by default; no parameter needed.
+- Let libass handle wrapping for CJK text: set `WrapStyle` to `0` (smart wrap) so long lines don’t clip. Auto wrapping caps CJK lines to ~34 chars based on video width and font size to avoid edge clipping.
+- Default vertical margin is auto (~2% of video height, clamped 12–50) so text sits closer to the bottom; override with `margin_v` if needed.
+- Keep subtitles readable: a modest font size (18–24), thin outline, and semi-transparent background.
+- Example `font_style` payload to reuse:
+```
+{
+  "font_size": "20",
+  "font_color": "&H00FFFFFF",
+  "outline_color": "&H00000000",
+  "back_colour": "&H80000000",
+  "outline_width": "1",
+  "border_style": "1",
+  "alignment": "2",
+  "margin_v": "32",
+  "wrap_style": "0"
+}
+```
 ```
 
 ### Professional Workflows
@@ -242,6 +262,13 @@ For easier distribution, you can also run via npx if packaged:
 "Insert B-roll footage at 30 seconds with a fade transition"
 → Uses: add_b_roll
 ```
+
+## 📁 Path Resolution & Output Locations
+
+- All tool paths (inputs and `output_video_path`) run through `resolve_path`.
+- Absolute paths are used as-is.
+- Relative paths: if `AUTOBYTEUS_AGENT_WORKSPACE` is set, the path is joined to that directory; otherwise it stays relative to the server’s current working directory.
+- Recommendation for agents: set `AUTOBYTEUS_AGENT_WORKSPACE` to a writable workspace or pass absolute output paths (e.g., `/tmp/intro_video.mp4`) to avoid surprises.
 
 ## 🎯 Real-World Use Cases
 

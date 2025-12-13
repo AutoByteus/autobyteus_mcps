@@ -7,35 +7,63 @@ import subprocess
 
 from core import mcp, resolve_path, _get_media_properties
 
-@mcp.tool()
-def trim_video(video_path: str, output_video_path: str, start_time: str, end_time: str) -> str:
-    """Trims a video to the specified start and end times."""
+@mcp.tool(description="Trim a video between start and end times. Prefer absolute paths for inputs/outputs; relative paths are resolved against the server working directory.")
+def trim_video(video_path: str, output_video_path: str, start_time: str, end_time: str, reencode: bool = True) -> str:
+    """Trims a video to the specified start and end times. Prefer absolute paths for inputs/outputs; relative paths are resolved against the server working directory.
+
+    Args:
+        video_path: Path to the input video.
+        output_video_path: Path to save the trimmed video.
+        start_time: Start timestamp (e.g., '00:00:10' or '10').
+        end_time: End timestamp.
+        reencode: If True (default), re-encodes the video. This prevents black/frozen frames
+                  at the start if the cut point is not on a keyframe.
+                  If False, performs a stream copy (faster, but may be imprecise).
+    """
     video_path = resolve_path(video_path)
     output_video_path = resolve_path(output_video_path)
+    
     try:
         input_stream = ffmpeg.input(video_path, ss=start_time, to=end_time)
-        output_stream = input_stream.output(output_video_path, c='copy') 
+        
+        if reencode:
+            # Re-encoding ensures frame accuracy and avoids initial black screens
+            # caused by cutting on non-keyframes.
+            output_stream = input_stream.output(output_video_path, vcodec='libx264', acodec='aac')
+            method_desc = "re-encoded"
+        else:
+            # Stream copy is faster but relies on existing keyframes
+            output_stream = input_stream.output(output_video_path, c='copy')
+            method_desc = "codec copy"
+            
         output_stream.run(capture_stdout=True, capture_stderr=True, overwrite_output=True)
-        return f"Video trimmed successfully (codec copy) to {output_video_path}"
+        return f"Video trimmed successfully ({method_desc}) to {output_video_path}"
+
     except ffmpeg.Error as e:
-        error_message_copy = e.stderr.decode('utf8') if e.stderr else str(e)
-        try:
-            input_stream_recode = ffmpeg.input(video_path, ss=start_time, to=end_time)
-            output_stream_recode = input_stream_recode.output(output_video_path)
-            output_stream_recode.run(capture_stdout=True, capture_stderr=True, overwrite_output=True)
-            return f"Video trimmed successfully (re-encoded) to {output_video_path}"
-        except ffmpeg.Error as e_recode:
-            error_message_recode = e_recode.stderr.decode('utf8') if e_recode.stderr else str(e_recode)
-            return f"Error trimming video. Copy attempt: {error_message_copy}. Re-encode attempt: {error_message_recode}"
+        error_message = e.stderr.decode('utf8') if e.stderr else str(e)
+        
+        # If stream copy failed (or was not attempted), and we haven't tried re-encoding yet, try it now.
+        if not reencode:
+            try:
+                input_stream_recode = ffmpeg.input(video_path, ss=start_time, to=end_time)
+                output_stream_recode = input_stream_recode.output(output_video_path, vcodec='libx264', acodec='aac')
+                output_stream_recode.run(capture_stdout=True, capture_stderr=True, overwrite_output=True)
+                return f"Video trimmed successfully (fallback to re-encoded) to {output_video_path}"
+            except ffmpeg.Error as e_recode:
+                error_message_recode = e_recode.stderr.decode('utf8') if e_recode.stderr else str(e_recode)
+                return f"Error trimming video. Copy attempt: {error_message}. Re-encode attempt: {error_message_recode}"
+        
+        return f"Error trimming video: {error_message}"
+        
     except FileNotFoundError:
         return f"Error: Input video file not found at {video_path}"
     except Exception as e:
         return f"An unexpected error occurred: {str(e)}"
 
-@mcp.tool()
+@mcp.tool(description="Concatenate videos (optional xfade). Prefer absolute paths for all paths; relative paths are resolved against the server working directory.")
 def concatenate_videos(video_paths: list[str], output_video_path: str,
                        transition_effect: str = None, transition_duration: float = None) -> str:
-    """Concatenates multiple video files into a single output file.
+    """Concatenates multiple video files into a single output file. Prefer absolute paths; relative paths are resolved against the server working directory.
     This tool intelligently handles clips with different resolutions and frame rates.
     Supports optional xfade transition when concatenating exactly two videos.
 

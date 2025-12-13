@@ -57,9 +57,9 @@ def _prepare_clip_for_concat(source_path: str, start_time_sec: float, end_time_s
     except Exception as e:
         raise RuntimeError(f"Unexpected error preparing segment {segment_index} from {source_path}: {str(e)}")
 
-@mcp.tool()
+@mcp.tool(description="Extract audio from a video file. Prefer absolute paths for inputs/outputs; relative paths are resolved against the server working directory.")
 def extract_audio_from_video(video_path: str, output_audio_path: str, audio_codec: str = 'mp3') -> str:
-    """Extracts audio from a video file and saves it."""
+    """Extracts audio from a video file and saves it. Prefer absolute paths; relative paths are resolved against the server working directory."""
     video_path = resolve_path(video_path)
     output_audio_path = resolve_path(output_audio_path)
     try:
@@ -72,9 +72,9 @@ def extract_audio_from_video(video_path: str, output_audio_path: str, audio_code
     except Exception as e:
         return f"An unexpected error occurred: {str(e)}"
 
-@mcp.tool()
+@mcp.tool(description="Replace a video's audio track. Prefer absolute paths for all paths; relative paths are resolved against the server working directory.")
 def replace_audio_track(video_path: str, new_audio_path: str, output_video_path: str, match_duration_mode: str = 'shortest') -> str:
-    """Replaces a video's audio track with a new one, with options for handling duration mismatches."""
+    """Replaces a video's audio track with a new one, with options for handling duration mismatches. Prefer absolute paths; relative paths are resolved against the server working directory."""
     video_path = resolve_path(video_path)
     new_audio_path = resolve_path(new_audio_path)
     output_video_path = resolve_path(output_video_path)
@@ -117,9 +117,21 @@ def replace_audio_track(video_path: str, new_audio_path: str, output_video_path:
     except Exception as e:
         return f"An unexpected error occurred: {str(e)}"
 
-@mcp.tool()
+@mcp.tool(
+    description=(
+        "Burn subtitles from an SRT onto a video. "
+        "Built-in layout: FontSize=20; WrapStyle=0 (smart wrap between CJK chars—2 disables wrapping and can clip); "
+        "MarginV auto (~2% of video height, clamped 12–50); BorderStyle=1; Outline=1; BackColour=&H80000000 (semi-transparent). "
+        "Auto line wrapping is always on (CJK lines capped ~34 chars based on video width and font size). "
+        "Override visuals with font_style, e.g. "
+        "{\"font_size\":\"22\",\"font_color\":\"&H00FFFFFF\",\"outline_color\":\"&H00000000\","
+        "\"back_colour\":\"&H80000000\",\"margin_v\":\"36\",\"wrap_style\":\"0\"}. "
+        "Honored keys: font_name, font_size, font_color/primary_color, outline_color, outline_width, "
+        "shadow_color, shadow_offset_x/y, alignment, margin_v/l/r, wrap_style, border_style, back_colour."
+    )
+)
 def add_subtitles(video_path: str, srt_file_path: str, output_video_path: str, font_style: dict = None) -> str:
-    """Burns subtitles from an SRT file onto a video, with optional styling."""
+    """Burns subtitles from an SRT file onto a video, with optional styling and automatic line wrapping."""
     video_path = resolve_path(video_path)
     srt_file_path = resolve_path(srt_file_path)
     output_video_path = resolve_path(output_video_path)
@@ -128,21 +140,119 @@ def add_subtitles(video_path: str, srt_file_path: str, output_video_path: str, f
         if not os.path.exists(srt_file_path): return f"Error: SRT subtitle file not found at {srt_file_path}"
 
         input_stream = ffmpeg.input(video_path)
-        
+
+        # Gather video properties early for layout heuristics
+        try:
+            from core import _get_media_properties
+            props = _get_media_properties(video_path)
+            video_width = props.get('width', 1280) or 1280
+            video_height = props.get('height', 720) or 720
+        except Exception:
+            video_width, video_height = 1280, 720
+
+        # Sensible defaults so CJK text wraps and remains legible without callers
+        # having to remember every libass flag.
+        default_font_style = {
+            'font_size': '20',
+            'font_color': '&H00FFFFFF',
+            'outline_color': '&H00000000',
+            'back_colour': '&H80000000',   # semi-transparent black background
+            'outline_width': '1',
+            'border_style': '1',
+            'alignment': '2',
+            # margin_v computed dynamically below
+            'wrap_style': '0',             # smart wrap to avoid clipping for long CJK lines
+        }
+
+        merged_font_style = {**default_font_style, **(font_style or {})}
+
+        # Dynamic vertical margin: ~2% of height, clamped to [12, 50], if not provided.
+        if 'margin_v' not in merged_font_style:
+            dyn_margin = max(12, min(50, int(video_height * 0.02)))
+            merged_font_style['margin_v'] = str(dyn_margin)
+
+        # If caller did not supply a wrap_style, keep smart wrap to prevent clipping.
+        if 'wrap_style' not in merged_font_style:
+            merged_font_style['wrap_style'] = '0'
+
         style_args = []
-        if font_style:
-            style_map = {
-                'font_name': 'FontName', 'font_size': 'FontSize', 'font_color': 'PrimaryColour',
-                'outline_color': 'OutlineColour', 'outline_width': 'Outline', 'shadow_color': 'ShadowColour',
-                'alignment': 'Alignment', 'margin_v': 'MarginV', 'margin_l': 'MarginL', 'margin_r': 'MarginR'
-            }
-            for key, value in font_style.items():
-                if key in style_map: style_args.append(f"{style_map[key]}={value}")
-            if 'shadow_offset_x' in font_style or 'shadow_offset_y' in font_style:
-                shadow_val = font_style.get('shadow_offset_x', font_style.get('shadow_offset_y', 1))
-                style_args.append(f"Shadow={shadow_val}")
-        
-        vf_filter_value = f"subtitles='{srt_file_path}'"
+        style_map = {
+            'font_name': 'FontName',
+            'font_size': 'FontSize',
+            'font_color': 'PrimaryColour',
+            'primary_color': 'PrimaryColour',
+            'primary_colour': 'PrimaryColour',
+            'outline_color': 'OutlineColour',
+            'outline_colour': 'OutlineColour',
+            'outline_width': 'Outline',
+            'shadow_color': 'ShadowColour',
+            'alignment': 'Alignment',
+            'margin_v': 'MarginV',
+            'margin_l': 'MarginL',
+            'margin_r': 'MarginR',
+            'wrap_style': 'WrapStyle',
+            'border_style': 'BorderStyle',
+            'back_color': 'BackColour',
+            'back_colour': 'BackColour',
+        }
+        for key, value in merged_font_style.items():
+            if key in style_map: style_args.append(f"{style_map[key]}={value}")
+        if font_style and ('shadow_offset_x' in font_style or 'shadow_offset_y' in font_style):
+            shadow_val = font_style.get('shadow_offset_x', font_style.get('shadow_offset_y', 1))
+            style_args.append(f"Shadow={shadow_val}")
+
+        # Auto-wrap raw SRT lines (useful for CJK with no spaces)
+        temp_srt_path = None
+        processed_srt_path = srt_file_path
+        try:
+            font_px = int(str(merged_font_style.get('font_size', '20')))
+        except Exception:
+            font_px = 20
+
+        import re
+        import textwrap
+        cjk_pattern = re.compile(r'[\u4e00-\u9fff\u3400-\u4dbf]')
+
+        def wrap_line(text: str) -> list[str]:
+            if not text:
+                return [text]
+            cjk_count = len(cjk_pattern.findall(text))
+            ratio = cjk_count / len(text)
+            if ratio > 0.3:
+                # CJK-heavy: tighter limit to avoid clipping even on wide videos
+                max_chars = min(34, max(12, int(video_width / (font_px * 1.6))))
+            else:
+                # Non-CJK or mixed: allow longer words, but still constrain
+                max_chars = max(28, int(video_width / (font_px * 0.9)))
+            wrapped = textwrap.wrap(text, width=max_chars, break_long_words=True, break_on_hyphens=False)
+            return wrapped or [text]
+
+        import tempfile
+        wrapped_lines = []
+        with open(srt_file_path, 'r', encoding='utf-8') as f:
+            block = []
+            for line in f:
+                if line.strip() == '':
+                    wrapped_lines.extend(block)
+                    wrapped_lines.append('')
+                    block = []
+                    continue
+                if '-->' in line:
+                    block.append(line.rstrip('\n'))
+                    continue
+                # Wrap subtitle text lines
+                text = line.rstrip('\n')
+                wrapped = wrap_line(text)
+                block.extend(wrapped)
+            wrapped_lines.extend(block)
+
+        temp_srt = tempfile.NamedTemporaryFile(delete=False, suffix='.srt', mode='w', encoding='utf-8')
+        temp_srt.write('\n'.join(wrapped_lines))
+        temp_srt.close()
+        temp_srt_path = temp_srt.name
+        processed_srt_path = temp_srt_path
+
+        vf_filter_value = f"subtitles='{processed_srt_path}'"
         if style_args:
             vf_filter_value += f":force_style='{','.join(style_args)}'"
 
@@ -155,7 +265,12 @@ def add_subtitles(video_path: str, srt_file_path: str, output_video_path: str, f
                 return f"Subtitles added successfully (audio re-encoded) to {output_video_path}"
             except ffmpeg.Error as e_recode_all:
                 return f"Error adding subtitles. Audio copy attempt: {e_acopy.stderr.decode('utf8')}. Full re-encode attempt: {e_recode_all.stderr.decode('utf8')}"
-
+        finally:
+            if temp_srt_path and os.path.exists(temp_srt_path):
+                try:
+                    os.remove(temp_srt_path)
+                except OSError:
+                    pass
     except Exception as e:
         return f"An unexpected error occurred: {str(e)}"
 
@@ -254,9 +369,9 @@ def add_image_overlay(video_path: str, output_video_path: str, image_path: str,
     except Exception as e:
         return f"An unexpected error occurred in add_image_overlay: {str(e)}"
 
-@mcp.tool()
+@mcp.tool(description="Create a video from a still image plus audio. Prefer absolute paths for all paths; relative paths are resolved against the server working directory.")
 def create_video_from_image_and_audio(image_path: str, audio_path: str, output_video_path: str, fps: int = 24) -> str:
-    """Creates a video from a static image and an audio file, with robust compatibility checks."""
+    """Creates a video from a static image and an audio file. Prefer absolute paths for inputs/outputs; relative paths are resolved against the server working directory. Robust compatibility checks included."""
     image_path, audio_path, output_video_path = map(resolve_path, [image_path, audio_path, output_video_path])
     try:
         if not os.path.exists(image_path): return f"Error: Input image file not found at {image_path}"
@@ -278,9 +393,9 @@ def create_video_from_image_and_audio(image_path: str, audio_path: str, output_v
     except Exception as e:
         return f"An unexpected error occurred: {str(e)}"
 
-@mcp.tool()
+@mcp.tool(description="Extract a single frame as an image. Prefer absolute paths; relative paths are resolved against the server working directory.")
 def extract_frame_from_video(video_path: str, output_image_path: str, frame_location: Union[str, float], image_quality: int = 2) -> str:
-    """Extracts a single frame from a video and saves it as an image."""
+    """Extracts a single frame from a video and saves it as an image. Prefer absolute paths; relative paths are resolved against the server working directory."""
     video_path, output_image_path = map(resolve_path, [video_path, output_image_path])
     try:
         if not os.path.exists(video_path): return f"Error: Input video file not found at {video_path}"
@@ -306,9 +421,9 @@ def extract_frame_from_video(video_path: str, output_image_path: str, frame_loca
     except Exception as e:
         return f"An unexpected error occurred: {str(e)}"
 
-@mcp.tool()
+@mcp.tool(description="Insert B-roll clips into a main video. Prefer absolute paths for all paths; relative paths are resolved against the server working directory.")
 def add_b_roll(main_video_path: str, broll_clips: list[dict], output_video_path: str) -> str:
-    """Inserts B-roll clips into a main video as overlays."""
+    """Inserts B-roll clips into a main video as overlays. Prefer absolute paths; relative paths are resolved against the server working directory."""
     main_video_path, output_video_path = map(resolve_path, [main_video_path, output_video_path])
     for clip in broll_clips:
         if 'clip_path' in clip: clip['clip_path'] = resolve_path(clip['clip_path'])
