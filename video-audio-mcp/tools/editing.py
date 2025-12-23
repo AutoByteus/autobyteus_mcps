@@ -4,11 +4,20 @@ import re
 import tempfile
 import shutil
 import subprocess
+from typing import Annotated
+
+from pydantic import Field
 
 from core import mcp, resolve_path, _get_media_properties
 
 @mcp.tool(description="Trim a video between start and end times. Prefer absolute paths for inputs/outputs; relative paths are resolved against the server working directory.")
-def trim_video(video_path: str, output_video_path: str, start_time: str, end_time: str, reencode: bool = True) -> str:
+def trim_video(
+    video_path: Annotated[str, Field(description="Absolute path to the input video; relative resolves vs server cwd")],
+    output_video_path: Annotated[str, Field(description="Absolute path for trimmed output; relative resolves vs server cwd")],
+    start_time: Annotated[str, Field(description="Start time (HH:MM:SS or seconds)")],
+    end_time: Annotated[str, Field(description="End time (HH:MM:SS or seconds)")],
+    reencode: Annotated[bool, Field(description="If true, re-encode for accuracy; false for faster stream copy")] = True
+) -> str:
     """Trims a video to the specified start and end times. Prefer absolute paths for inputs/outputs; relative paths are resolved against the server working directory.
 
     Args:
@@ -61,8 +70,12 @@ def trim_video(video_path: str, output_video_path: str, start_time: str, end_tim
         return f"An unexpected error occurred: {str(e)}"
 
 @mcp.tool(description="Concatenate videos (optional xfade). Prefer absolute paths for all paths; relative paths are resolved against the server working directory.")
-def concatenate_videos(video_paths: list[str], output_video_path: str,
-                       transition_effect: str = None, transition_duration: float = None) -> str:
+def concatenate_videos(
+    video_paths: Annotated[list[str], Field(description="List of input video paths; prefer absolute (relative resolves vs server cwd)")],
+    output_video_path: Annotated[str, Field(description="Absolute path for concatenated output; relative resolves vs server cwd")],
+    transition_effect: Annotated[str | None, Field(description="Optional xfade transition type (only when exactly two videos)")] = None,
+    transition_duration: Annotated[float | None, Field(description="Duration in seconds for xfade (required when transition_effect set)")] = None
+) -> str:
     """Concatenates multiple video files into a single output file. Prefer absolute paths; relative paths are resolved against the server working directory.
     This tool intelligently handles clips with different resolutions and frame rates.
     Supports optional xfade transition when concatenating exactly two videos.
@@ -296,7 +309,10 @@ def concatenate_videos(video_paths: list[str], output_video_path: str,
         shutil.rmtree(temp_dir)
 
 @mcp.tool()
-def concatenate_audios(audio_paths: list[str], output_audio_path: str) -> str:
+def concatenate_audios(
+    audio_paths: Annotated[list[str], Field(description="List of audio file paths; prefer absolute (relative resolves vs server cwd)")],
+    output_audio_path: Annotated[str, Field(description="Absolute path for concatenated audio; relative resolves vs server cwd")]
+) -> str:
     """Concatenates multiple audio files into a single output file."""
     audio_paths = [resolve_path(p) for p in audio_paths]
     output_audio_path = resolve_path(output_audio_path)
@@ -335,7 +351,11 @@ def concatenate_audios(audio_paths: list[str], output_audio_path: str) -> str:
         shutil.rmtree(temp_dir)
 
 @mcp.tool()
-def change_video_speed(video_path: str, output_video_path: str, speed_factor: float) -> str:
+def change_video_speed(
+    video_path: Annotated[str, Field(description="Absolute path to the input video; relative resolves vs server cwd")],
+    output_video_path: Annotated[str, Field(description="Absolute path for the speed-changed output; relative resolves vs server cwd")],
+    speed_factor: Annotated[float, Field(description="Speed multiplier (>0), e.g., 0.5 slow, 2.0 fast")]
+) -> str:
     """Changes the playback speed of a video (and its audio, if present)."""
     video_path = resolve_path(video_path)
     output_video_path = resolve_path(output_video_path)
@@ -389,9 +409,12 @@ def change_video_speed(video_path: str, output_video_path: str, speed_factor: fl
         return f"An unexpected error occurred while changing video speed: {str(e)}"
 
 @mcp.tool()
-def remove_silence(media_path: str, output_media_path: str, 
-                   silence_threshold_db: float = -30.0, 
-                   min_silence_duration_ms: int = 500) -> str:
+def remove_silence(
+    media_path: Annotated[str, Field(description="Absolute path to the input audio/video; relative resolves vs server cwd")],
+    output_media_path: Annotated[str, Field(description="Absolute path for silence-removed output; relative resolves vs server cwd")],
+    silence_threshold_db: Annotated[float, Field(description="Silence threshold in dB, e.g., -30.0")]= -30.0,
+    min_silence_duration_ms: Annotated[int, Field(description="Minimum silence duration in milliseconds, e.g., 500")] = 500
+) -> str:
     """Removes silent segments from an audio or video file."""
     media_path = resolve_path(media_path)
     output_media_path = resolve_path(output_media_path)

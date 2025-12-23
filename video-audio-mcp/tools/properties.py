@@ -1,11 +1,15 @@
 import ffmpeg
 import os
-from typing import Union
+from typing import Union, Annotated
+
+from pydantic import Field
 
 from core import mcp, resolve_path, _run_ffmpeg_with_fallback
 
 @mcp.tool()
-def get_media_duration(media_path: str) -> Union[float, str]:
+def get_media_duration(
+    media_path: Annotated[str, Field(description="Absolute path to input media; relative resolves vs server cwd")]
+) -> Union[float, str]:
     """Gets the duration of a video or audio file in seconds.
 
     Args:
@@ -31,8 +35,14 @@ def get_media_duration(media_path: str) -> Union[float, str]:
         return f"An unexpected error occurred: {str(e)}"
 
 @mcp.tool()
-def convert_audio_properties(input_audio_path: str, output_audio_path: str, target_format: str, 
-                               bitrate: str = None, sample_rate: int = None, channels: int = None) -> str:
+def convert_audio_properties(
+    input_audio_path: Annotated[str, Field(description="Absolute path to source audio; relative resolves vs server cwd")],
+    output_audio_path: Annotated[str, Field(description="Absolute path for converted audio; relative resolves vs server cwd")],
+    target_format: Annotated[str, Field(description="Target audio format, e.g., mp3, wav, aac")],
+    bitrate: Annotated[str | None, Field(description="Target audio bitrate (e.g., '128k')")] = None,
+    sample_rate: Annotated[int | None, Field(description="Target sample rate in Hz")] = None,
+    channels: Annotated[int | None, Field(description="Number of channels (1=mono,2=stereo)")] = None
+) -> str:
     """Converts audio file format and ALL specified properties like bitrate, sample rate, and channels.
 
     Args:
@@ -70,10 +80,19 @@ def convert_audio_properties(input_audio_path: str, output_audio_path: str, targ
         return f"An unexpected error occurred: {str(e)}"
 
 @mcp.tool()
-def convert_video_properties(input_video_path: str, output_video_path: str, target_format: str,
-                               resolution: str = None, video_codec: str = None, video_bitrate: str = None,
-                               frame_rate: int = None, audio_codec: str = None, audio_bitrate: str = None,
-                               audio_sample_rate: int = None, audio_channels: int = None) -> str:
+def convert_video_properties(
+    input_video_path: Annotated[str, Field(description="Absolute path to source video; relative resolves vs server cwd")],
+    output_video_path: Annotated[str, Field(description="Absolute path for converted video; relative resolves vs server cwd")],
+    target_format: Annotated[str, Field(description="Target container/format, e.g., mp4, mov, mkv")],
+    resolution: Annotated[str | None, Field(description="Target resolution, e.g., 1920x1080 or 720; 'preserve' to keep")] = None,
+    video_codec: Annotated[str | None, Field(description="Video codec, e.g., libx264, hevc, vp9")] = None,
+    video_bitrate: Annotated[str | None, Field(description="Video bitrate, e.g., '4M'")] = None,
+    frame_rate: Annotated[int | None, Field(description="Frame rate, e.g., 30")] = None,
+    audio_codec: Annotated[str | None, Field(description="Audio codec, e.g., aac, opus")] = None,
+    audio_bitrate: Annotated[str | None, Field(description="Audio bitrate, e.g., '192k'")] = None,
+    audio_sample_rate: Annotated[int | None, Field(description="Audio sample rate, e.g., 48000")] = None,
+    audio_channels: Annotated[int | None, Field(description="Audio channels, 1=mono, 2=stereo")] = None
+) -> str:
     """Converts video file format and ALL specified properties like resolution, codecs, bitrates, and frame rate.
     Args listed in PRD.
     Returns:
@@ -116,8 +135,13 @@ def convert_video_properties(input_video_path: str, output_video_path: str, targ
         return f"An unexpected error occurred: {str(e)}"
 
 @mcp.tool()
-def change_aspect_ratio(video_path: str, output_video_path: str, target_aspect_ratio: str, 
-                          resize_mode: str = 'pad', padding_color: str = 'black') -> str:
+def change_aspect_ratio(
+    video_path: Annotated[str, Field(description="Absolute path to source video; relative resolves vs server cwd")],
+    output_video_path: Annotated[str, Field(description="Absolute path for aspect-adjusted video; relative resolves vs server cwd")],
+    target_aspect_ratio: Annotated[str, Field(description="Target aspect ratio like '16:9'")] ,
+    resize_mode: Annotated[str, Field(description="pad (default) or crop")] = 'pad',
+    padding_color: Annotated[str, Field(description="Pad color when using pad mode, e.g., black")] = 'black'
+) -> str:
     """Changes the aspect ratio of a video, using padding or cropping.
     Args listed in PRD.
     Returns:
@@ -199,7 +223,11 @@ def change_aspect_ratio(video_path: str, output_video_path: str, target_aspect_r
         return f"An unexpected error occurred: {str(e)}"
 
 @mcp.tool()
-def convert_audio_format(input_audio_path: str, output_audio_path: str, target_format: str) -> str:
+def convert_audio_format(
+    input_audio_path: Annotated[str, Field(description="Absolute path to source audio; relative resolves vs server cwd")],
+    output_audio_path: Annotated[str, Field(description="Absolute path for converted audio; relative resolves vs server cwd")],
+    target_format: Annotated[str, Field(description="Target format, e.g., mp3, wav, aac")]
+) -> str:
     """Converts an audio file to the specified target format."""
     input_audio_path = resolve_path(input_audio_path)
     output_audio_path = resolve_path(output_audio_path)
@@ -215,7 +243,11 @@ def convert_audio_format(input_audio_path: str, output_audio_path: str, target_f
         return f"An unexpected error occurred: {str(e)}"
 
 @mcp.tool()
-def set_audio_bitrate(input_audio_path: str, output_audio_path: str, bitrate: str) -> str:
+def set_audio_bitrate(
+    input_audio_path: Annotated[str, Field(description="Absolute path to source audio; relative resolves vs server cwd")],
+    output_audio_path: Annotated[str, Field(description="Absolute path for output audio; relative resolves vs server cwd")],
+    bitrate: Annotated[str, Field(description="Target audio bitrate, e.g., '192k'")]
+) -> str:
     """Sets the bitrate for an audio file."""
     input_audio_path = resolve_path(input_audio_path)
     output_audio_path = resolve_path(output_audio_path)
@@ -231,7 +263,11 @@ def set_audio_bitrate(input_audio_path: str, output_audio_path: str, bitrate: st
         return f"An unexpected error occurred: {str(e)}"
 
 @mcp.tool()
-def set_audio_sample_rate(input_audio_path: str, output_audio_path: str, sample_rate: int) -> str:
+def set_audio_sample_rate(
+    input_audio_path: Annotated[str, Field(description="Absolute path to source audio; relative resolves vs server cwd")],
+    output_audio_path: Annotated[str, Field(description="Absolute path for output audio; relative resolves vs server cwd")],
+    sample_rate: Annotated[int, Field(description="Target sample rate in Hz, e.g., 48000")]
+) -> str:
     """Sets the sample rate for an audio file."""
     input_audio_path = resolve_path(input_audio_path)
     output_audio_path = resolve_path(output_audio_path)
@@ -247,7 +283,11 @@ def set_audio_sample_rate(input_audio_path: str, output_audio_path: str, sample_
         return f"An unexpected error occurred: {str(e)}"
 
 @mcp.tool()
-def set_audio_channels(input_audio_path: str, output_audio_path: str, channels: int) -> str:
+def set_audio_channels(
+    input_audio_path: Annotated[str, Field(description="Absolute path to source audio; relative resolves vs server cwd")],
+    output_audio_path: Annotated[str, Field(description="Absolute path for output audio; relative resolves vs server cwd")],
+    channels: Annotated[int, Field(description="Number of channels, 1=mono, 2=stereo")]
+) -> str:
     """Sets the number of channels for an audio file (1 for mono, 2 for stereo)."""
     input_audio_path = resolve_path(input_audio_path)
     output_audio_path = resolve_path(output_audio_path)
@@ -263,14 +303,22 @@ def set_audio_channels(input_audio_path: str, output_audio_path: str, channels: 
         return f"An unexpected error occurred: {str(e)}"
 
 @mcp.tool()
-def convert_video_format(input_video_path: str, output_video_path: str, target_format: str) -> str:
+def convert_video_format(
+    input_video_path: Annotated[str, Field(description="Absolute path to source video; relative resolves vs server cwd")],
+    output_video_path: Annotated[str, Field(description="Absolute path for converted video; relative resolves vs server cwd")],
+    target_format: Annotated[str, Field(description="Target format/container, e.g., mp4, mov, mkv")]
+) -> str:
     """Converts a video file to the specified target format, attempting to copy codecs first."""
     primary_kwargs = {'format': target_format, 'vcodec': 'copy', 'acodec': 'copy'}
     fallback_kwargs = {'format': target_format}
     return _run_ffmpeg_with_fallback(input_video_path, output_video_path, primary_kwargs, fallback_kwargs)
 
 @mcp.tool()
-def set_video_resolution(input_video_path: str, output_video_path: str, resolution: str) -> str:
+def set_video_resolution(
+    input_video_path: Annotated[str, Field(description="Absolute path to source video; relative resolves vs server cwd")],
+    output_video_path: Annotated[str, Field(description="Absolute path for output video; relative resolves vs server cwd")],
+    resolution: Annotated[str, Field(description="Target resolution, e.g., 1920x1080 or 720")]
+) -> str:
     """Sets the resolution of a video, attempting to copy the audio stream."""
     vf_filters = []
     if 'x' in resolution:
@@ -284,49 +332,77 @@ def set_video_resolution(input_video_path: str, output_video_path: str, resoluti
     return _run_ffmpeg_with_fallback(input_video_path, output_video_path, primary_kwargs, fallback_kwargs)
 
 @mcp.tool()
-def set_video_codec(input_video_path: str, output_video_path: str, video_codec: str) -> str:
+def set_video_codec(
+    input_video_path: Annotated[str, Field(description="Absolute path to source video; relative resolves vs server cwd")],
+    output_video_path: Annotated[str, Field(description="Absolute path for output video; relative resolves vs server cwd")],
+    video_codec: Annotated[str, Field(description="Video codec, e.g., libx264, hevc, vp9")]
+) -> str:
     """Sets the video codec of a video, attempting to copy the audio stream."""
     primary_kwargs = {'vcodec': video_codec, 'acodec': 'copy'}
     fallback_kwargs = {'vcodec': video_codec}
     return _run_ffmpeg_with_fallback(input_video_path, output_video_path, primary_kwargs, fallback_kwargs)
 
 @mcp.tool()
-def set_video_bitrate(input_video_path: str, output_video_path: str, video_bitrate: str) -> str:
+def set_video_bitrate(
+    input_video_path: Annotated[str, Field(description="Absolute path to source video; relative resolves vs server cwd")],
+    output_video_path: Annotated[str, Field(description="Absolute path for output video; relative resolves vs server cwd")],
+    video_bitrate: Annotated[str, Field(description="Target video bitrate, e.g., '4M'")]
+) -> str:
     """Sets the video bitrate of a video, attempting to copy the audio stream."""
     primary_kwargs = {'video_bitrate': video_bitrate, 'acodec': 'copy'}
     fallback_kwargs = {'video_bitrate': video_bitrate}
     return _run_ffmpeg_with_fallback(input_video_path, output_video_path, primary_kwargs, fallback_kwargs)
 
 @mcp.tool()
-def set_video_frame_rate(input_video_path: str, output_video_path: str, frame_rate: int) -> str:
+def set_video_frame_rate(
+    input_video_path: Annotated[str, Field(description="Absolute path to source video; relative resolves vs server cwd")],
+    output_video_path: Annotated[str, Field(description="Absolute path for output video; relative resolves vs server cwd")],
+    frame_rate: Annotated[int, Field(description="Target frame rate, e.g., 24, 30, 60")]
+) -> str:
     """Sets the frame rate of a video, attempting to copy the audio stream."""
     primary_kwargs = {'r': frame_rate, 'acodec': 'copy'}
     fallback_kwargs = {'r': frame_rate}
     return _run_ffmpeg_with_fallback(input_video_path, output_video_path, primary_kwargs, fallback_kwargs)
 
 @mcp.tool()
-def set_video_audio_track_codec(input_video_path: str, output_video_path: str, audio_codec: str) -> str:
+def set_video_audio_track_codec(
+    input_video_path: Annotated[str, Field(description="Absolute path to source video; relative resolves vs server cwd")],
+    output_video_path: Annotated[str, Field(description="Absolute path for output video; relative resolves vs server cwd")],
+    audio_codec: Annotated[str, Field(description="Audio codec, e.g., aac, opus, ac3")]
+) -> str:
     """Sets the audio codec of a video's audio track, attempting to copy the video stream."""
     primary_kwargs = {'acodec': audio_codec, 'vcodec': 'copy'}
     fallback_kwargs = {'acodec': audio_codec}
     return _run_ffmpeg_with_fallback(input_video_path, output_video_path, primary_kwargs, fallback_kwargs)
 
 @mcp.tool()
-def set_video_audio_track_bitrate(input_video_path: str, output_video_path: str, audio_bitrate: str) -> str:
+def set_video_audio_track_bitrate(
+    input_video_path: Annotated[str, Field(description="Absolute path to source video; relative resolves vs server cwd")],
+    output_video_path: Annotated[str, Field(description="Absolute path for output video; relative resolves vs server cwd")],
+    audio_bitrate: Annotated[str, Field(description="Target audio bitrate, e.g., '160k'")]
+) -> str:
     """Sets the audio bitrate of a video's audio track, attempting to copy the video stream."""
     primary_kwargs = {'audio_bitrate': audio_bitrate, 'vcodec': 'copy'}
     fallback_kwargs = {'audio_bitrate': audio_bitrate}
     return _run_ffmpeg_with_fallback(input_video_path, output_video_path, primary_kwargs, fallback_kwargs)
 
 @mcp.tool()
-def set_video_audio_track_sample_rate(input_video_path: str, output_video_path: str, audio_sample_rate: int) -> str:
+def set_video_audio_track_sample_rate(
+    input_video_path: Annotated[str, Field(description="Absolute path to source video; relative resolves vs server cwd")],
+    output_video_path: Annotated[str, Field(description="Absolute path for output video; relative resolves vs server cwd")],
+    audio_sample_rate: Annotated[int, Field(description="Target audio sample rate in Hz, e.g., 48000")]
+) -> str:
     """Sets the audio sample rate of a video's audio track, attempting to copy the video stream."""
     primary_kwargs = {'ar': audio_sample_rate, 'vcodec': 'copy'}
     fallback_kwargs = {'ar': audio_sample_rate}
     return _run_ffmpeg_with_fallback(input_video_path, output_video_path, primary_kwargs, fallback_kwargs)
 
 @mcp.tool()
-def set_video_audio_track_channels(input_video_path: str, output_video_path: str, audio_channels: int) -> str:
+def set_video_audio_track_channels(
+    input_video_path: Annotated[str, Field(description="Absolute path to source video; relative resolves vs server cwd")],
+    output_video_path: Annotated[str, Field(description="Absolute path for output video; relative resolves vs server cwd")],
+    audio_channels: Annotated[int, Field(description="Audio channels, 1=mono, 2=stereo")]
+) -> str:
     """Sets the number of audio channels of a video's audio track, attempting to copy the video stream."""
     primary_kwargs = {'ac': audio_channels, 'vcodec': 'copy'}
     fallback_kwargs = {'ac': audio_channels}

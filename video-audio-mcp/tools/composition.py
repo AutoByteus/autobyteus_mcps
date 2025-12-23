@@ -3,7 +3,8 @@ import os
 import tempfile
 import shutil
 import subprocess
-from typing import Union
+from typing import Union, Annotated
+from pydantic import Field
 
 from core import mcp, resolve_path, _get_media_properties, _parse_time_to_seconds
 
@@ -58,7 +59,11 @@ def _prepare_clip_for_concat(source_path: str, start_time_sec: float, end_time_s
         raise RuntimeError(f"Unexpected error preparing segment {segment_index} from {source_path}: {str(e)}")
 
 @mcp.tool(description="Extract audio from a video file. Prefer absolute paths for inputs/outputs; relative paths are resolved against the server working directory.")
-def extract_audio_from_video(video_path: str, output_audio_path: str, audio_codec: str = 'mp3') -> str:
+def extract_audio_from_video(
+    video_path: Annotated[str, Field(description="Absolute path to the input video; relative resolves vs server cwd")],
+    output_audio_path: Annotated[str, Field(description="Absolute path for extracted audio; relative resolves vs server cwd")],
+    audio_codec: Annotated[str, Field(description="Audio codec (e.g., mp3, aac, wav)")] = 'mp3'
+) -> str:
     """Extracts audio from a video file and saves it. Prefer absolute paths; relative paths are resolved against the server working directory."""
     video_path = resolve_path(video_path)
     output_audio_path = resolve_path(output_audio_path)
@@ -73,7 +78,12 @@ def extract_audio_from_video(video_path: str, output_audio_path: str, audio_code
         return f"An unexpected error occurred: {str(e)}"
 
 @mcp.tool(description="Replace a video's audio track. Prefer absolute paths for all paths; relative paths are resolved against the server working directory.")
-def replace_audio_track(video_path: str, new_audio_path: str, output_video_path: str, match_duration_mode: str = 'shortest') -> str:
+def replace_audio_track(
+    video_path: Annotated[str, Field(description="Absolute path to the input video; relative resolves vs server cwd")],
+    new_audio_path: Annotated[str, Field(description="Absolute path to the new audio file; relative resolves vs server cwd")],
+    output_video_path: Annotated[str, Field(description="Absolute path for output video; relative resolves vs server cwd")],
+    match_duration_mode: Annotated[str, Field(description="Duration handling: 'shortest' or 'stretch_video'")] = 'shortest'
+) -> str:
     """Replaces a video's audio track with a new one, with options for handling duration mismatches. Prefer absolute paths; relative paths are resolved against the server working directory."""
     video_path = resolve_path(video_path)
     new_audio_path = resolve_path(new_audio_path)
@@ -130,7 +140,12 @@ def replace_audio_track(video_path: str, new_audio_path: str, output_video_path:
         "shadow_color, shadow_offset_x/y, alignment, margin_v/l/r, wrap_style, border_style, back_colour."
     )
 )
-def add_subtitles(video_path: str, srt_file_path: str, output_video_path: str, font_style: dict = None) -> str:
+def add_subtitles(
+    video_path: Annotated[str, Field(description="Absolute path to the input video; relative resolves vs server cwd")],
+    srt_file_path: Annotated[str, Field(description="Absolute path to SRT file; relative resolves vs server cwd")],
+    output_video_path: Annotated[str, Field(description="Absolute path for subtitled output; relative resolves vs server cwd")],
+    font_style: Annotated[dict | None, Field(description="Optional ASS/ssa style overrides (see README)")] = None
+) -> str:
     """Burns subtitles from an SRT file onto a video, with optional styling and automatic line wrapping."""
     video_path = resolve_path(video_path)
     srt_file_path = resolve_path(srt_file_path)
@@ -275,7 +290,11 @@ def add_subtitles(video_path: str, srt_file_path: str, output_video_path: str, f
         return f"An unexpected error occurred: {str(e)}"
 
 @mcp.tool()
-def add_text_overlay(video_path: str, output_video_path: str, text_elements: list[dict]) -> str:
+def add_text_overlay(
+    video_path: Annotated[str, Field(description="Absolute path to the input video; relative resolves vs server cwd")],
+    output_video_path: Annotated[str, Field(description="Absolute path for output with text overlays; relative resolves vs server cwd")],
+    text_elements: Annotated[list[dict], Field(description="List of overlay specs (text, start_time, end_time, positions, optional fontfile)")],
+) -> str:
     """Adds one or more text overlays to a video at specified times and positions."""
     video_path = resolve_path(video_path)
     output_video_path = resolve_path(output_video_path)
@@ -326,10 +345,17 @@ def add_text_overlay(video_path: str, output_video_path: str, text_elements: lis
         return f"An unexpected error occurred: {str(e)}"
 
 @mcp.tool()
-def add_image_overlay(video_path: str, output_video_path: str, image_path: str, 
-                        position: str = 'top_right', opacity: float = None, 
-                        start_time: str = None, end_time: str = None, 
-                        width: str = None, height: str = None) -> str:
+def add_image_overlay(
+    video_path: Annotated[str, Field(description="Absolute path to the input video; relative resolves vs server cwd")],
+    output_video_path: Annotated[str, Field(description="Absolute path for output with overlay; relative resolves vs server cwd")],
+    image_path: Annotated[str, Field(description="Absolute path to overlay image; relative resolves vs server cwd")],
+    position: Annotated[str, Field(description="Overlay position: top_right, top_left, bottom_right, bottom_left, center")] = 'top_right',
+    opacity: Annotated[float | None, Field(description="Optional opacity 0.0-1.0")] = None,
+    start_time: Annotated[str | None, Field(description="Optional overlay start time (seconds)")]= None,
+    end_time: Annotated[str | None, Field(description="Optional overlay end time (seconds)")]= None,
+    width: Annotated[str | None, Field(description="Optional overlay width (e.g., '320' or '-1' to auto)")] = None,
+    height: Annotated[str | None, Field(description="Optional overlay height (e.g., '180' or '-1' to auto)")] = None,
+) -> str:
     """Adds an image overlay (watermark/logo) to a video."""
     video_path, output_video_path, image_path = map(resolve_path, [video_path, output_video_path, image_path])
     try:
@@ -370,7 +396,12 @@ def add_image_overlay(video_path: str, output_video_path: str, image_path: str,
         return f"An unexpected error occurred in add_image_overlay: {str(e)}"
 
 @mcp.tool(description="Create a video from a still image plus audio. Prefer absolute paths for all paths; relative paths are resolved against the server working directory.")
-def create_video_from_image_and_audio(image_path: str, audio_path: str, output_video_path: str, fps: int = 24) -> str:
+def create_video_from_image_and_audio(
+    image_path: Annotated[str, Field(description="Absolute path to the still image; prefer absolute (relative resolves vs server cwd)")],
+    audio_path: Annotated[str, Field(description="Absolute path to the audio file; prefer absolute (relative resolves vs server cwd)")],
+    output_video_path: Annotated[str, Field(description="Absolute path for the output video; prefer absolute (relative resolves vs server cwd)")],
+    fps: Annotated[int, Field(description="Frames per second (e.g., 24)")] = 24
+) -> str:
     """Creates a video from a static image and an audio file. Prefer absolute paths for inputs/outputs; relative paths are resolved against the server working directory. Robust compatibility checks included."""
     image_path, audio_path, output_video_path = map(resolve_path, [image_path, audio_path, output_video_path])
     try:
@@ -394,7 +425,12 @@ def create_video_from_image_and_audio(image_path: str, audio_path: str, output_v
         return f"An unexpected error occurred: {str(e)}"
 
 @mcp.tool(description="Extract a single frame as an image. Prefer absolute paths; relative paths are resolved against the server working directory.")
-def extract_frame_from_video(video_path: str, output_image_path: str, frame_location: Union[str, float], image_quality: int = 2) -> str:
+def extract_frame_from_video(
+    video_path: Annotated[str, Field(description="Absolute path to the input video; relative resolves vs server cwd")],
+    output_image_path: Annotated[str, Field(description="Absolute path for extracted frame image; relative resolves vs server cwd")],
+    frame_location: Annotated[Union[str, float], Field(description="Frame location: 'first', 'last', timestamp string, or seconds")],
+    image_quality: Annotated[int, Field(description="Image quality (1=best, 31=worst)")] = 2
+) -> str:
     """Extracts a single frame from a video and saves it as an image. Prefer absolute paths; relative paths are resolved against the server working directory."""
     video_path, output_image_path = map(resolve_path, [video_path, output_image_path])
     try:
@@ -422,7 +458,11 @@ def extract_frame_from_video(video_path: str, output_image_path: str, frame_loca
         return f"An unexpected error occurred: {str(e)}"
 
 @mcp.tool(description="Insert B-roll clips into a main video. Prefer absolute paths for all paths; relative paths are resolved against the server working directory.")
-def add_b_roll(main_video_path: str, broll_clips: list[dict], output_video_path: str) -> str:
+def add_b_roll(
+    main_video_path: Annotated[str, Field(description="Absolute path to the main video; relative resolves vs server cwd")],
+    broll_clips: Annotated[list[dict], Field(description="List of B-roll clip dicts (clip_path, insert_at_timestamp, etc.)")],
+    output_video_path: Annotated[str, Field(description="Absolute path for output with B-roll; relative resolves vs server cwd")]
+) -> str:
     """Inserts B-roll clips into a main video as overlays. Prefer absolute paths; relative paths are resolved against the server working directory."""
     main_video_path, output_video_path = map(resolve_path, [main_video_path, output_video_path])
     for clip in broll_clips:
@@ -458,7 +498,12 @@ def add_b_roll(main_video_path: str, broll_clips: list[dict], output_video_path:
         shutil.rmtree(temp_dir)
 
 @mcp.tool()
-def add_basic_transitions(video_path: str, output_video_path: str, transition_type: str, duration_seconds: float) -> str:
+def add_basic_transitions(
+    video_path: Annotated[str, Field(description="Absolute path to the input video; relative resolves vs server cwd")],
+    output_video_path: Annotated[str, Field(description="Absolute path for output with transition; relative resolves vs server cwd")],
+    transition_type: Annotated[str, Field(description="fade_in, fade_out, crossfade_from_black, crossfade_to_black")],
+    duration_seconds: Annotated[float, Field(description="Transition duration in seconds")]
+) -> str:
     """Adds basic fade transitions to the beginning or end of a video."""
     video_path, output_video_path = map(resolve_path, [video_path, output_video_path])
     if not os.path.exists(video_path): return f"Error: Input video file not found at {video_path}"

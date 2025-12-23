@@ -270,6 +270,10 @@ For easier distribution, you can also run via npx if packaged:
 - Relative paths: if `AUTOBYTEUS_AGENT_WORKSPACE` is set, the path is joined to that directory; otherwise it stays relative to the server’s current working directory.
 - Recommendation for agents: set `AUTOBYTEUS_AGENT_WORKSPACE` to a writable workspace or pass absolute output paths (e.g., `/tmp/intro_video.mp4`) to avoid surprises.
 
+### Tool Tips for LLMs & UIs
+- Prefer **absolute paths** in tool calls so outputs land where you expect; relative paths resolve against the server’s current working directory.
+- Per-parameter help text is provided via `typing.Annotated` + `pydantic.Field(description=...)` (see `create_video_from_image_and_audio` for an example). Add similar annotations to other tools to surface clearer prompts in clients.
+
 ## 🎯 Real-World Use Cases
 
 ### Content Creation
