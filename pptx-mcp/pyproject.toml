@@ -1,0 +1,17 @@
+[project]
+name = "pptx-mcp"
+version = "0.1.0"
+description = "MCP server for creating and editing PPTX decks from images."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp",
+    "python-pptx",
+    "Pillow",
+]
+
+[project.scripts]
+start-pptx-mcp = "app.main:run_server"
+
+[tool.setuptools]
+packages = ["app"]
