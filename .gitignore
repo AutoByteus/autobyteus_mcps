@@ -47,3 +47,6 @@ wheels/
 
 # Cursor workspace
 .cursor/
+
+# Toy WSS MCP artifacts
+wss_mcp_toy/certs/
