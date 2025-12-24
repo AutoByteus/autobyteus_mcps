@@ -1,10 +1,12 @@
 # PPTX MCP Context
 
+## Development Guidelines
+Always make a plan before implementation.
+
 ## Testing
-The virtual environment is already set up in `.venv`.
+The virtual environment is managed by `uv`.
 To run tests, execute:
 
 ```bash
-cd pptx-mcp
-.venv/bin/pytest
+PYTHONPATH=. uv run pytest
 ```

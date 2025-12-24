@@ -203,6 +203,75 @@ def append_images_as_slides(pptx_path: str, images: list[str], output_path: str 
     }
 
 
+@mcp.tool(
+    name="combine_images",
+    description="Combine multiple images into a single image. Supports 'vertical' (top-to-bottom) or 'horizontal' (left-to-right) arrangement. The output dimensions are calculated to fit all images."
+)
+def combine_images(images: list[str], output_path: str, direction: str = "vertical") -> dict:
+    """
+    Combine images into a single file vertically or horizontally.
+    """
+    logger.info("Combining %d images (direction=%s).", len(images), direction)
+    if not images:
+        return {"error": "images list cannot be empty"}
+    
+    if direction not in ("vertical", "horizontal"):
+        return {"error": f"Invalid direction '{direction}'. Must be 'vertical' or 'horizontal'."}
+
+    images = _validate_images(images)
+
+    opened_images = []
+    try:
+        for img_path in images:
+            opened_images.append(PILImage.open(img_path))
+        
+        if not opened_images:
+             return {"error": "No images loaded"}
+
+        # Calculate dimensions based on direction
+        if direction == "vertical":
+            max_width = max(img.width for img in opened_images)
+            total_height = sum(img.height for img in opened_images)
+            total_width = max_width
+        else: # horizontal
+            max_height = max(img.height for img in opened_images)
+            total_width = sum(img.width for img in opened_images)
+            total_height = max_height
+
+        # Create new image
+        new_im = PILImage.new('RGB', (total_width, total_height), (255, 255, 255))
+
+        x_offset = 0
+        y_offset = 0
+        for img in opened_images:
+            new_im.paste(img, (x_offset, y_offset))
+            if direction == "vertical":
+                y_offset += img.height
+            else:
+                x_offset += img.width
+
+        new_im.save(output_path)
+        logger.info("Saved combined image to %s", output_path)
+        
+        return {
+            "output_path": output_path,
+            "total_width": total_width,
+            "total_height": total_height,
+            "image_count": len(images),
+            "direction": direction
+        }
+    except Exception as e:
+        logger.error("Failed to combine images: %s", e)
+        return {"error": str(e)}
+    finally:
+        # Close images to free resources
+        for img in opened_images:
+            try:
+                img.close()
+            except:
+                pass
+
+
 def run_server() -> None:
     logger.info("Starting PPTX Image MCP server with stdio transport...")
     mcp.run(transport="stdio")
