@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=65", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "browser-mcp-server"
+version = "0.1.0"
+description = "MCP server exposing browser automation tools via brui_core/Playwright"
+authors = [{name = "Autobyteus"}]
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp>=1.13.1",
+    "brui-core>=1.1.0",
+    "beautifulsoup4>=4.12.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0",
+    "pytest-anyio>=0",
+    "trio>=0.23",
+    "python-dotenv>=1.2.1",
+]
+
+[project.scripts]
+browser-mcp-server = "browser_mcp.server:main"
+
+[tool.pytest.ini_options]
+addopts = "-q"
