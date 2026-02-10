@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=65", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "alexa-mcp"
+version = "0.1.0"
+description = "MCP server for controlling Alexa routines and music actions through a bounded local adapter command"
+authors = [{ name = "Autobyteus" }]
+readme = "README.md"
+requires-python = ">=3.10,<3.14"
+dependencies = [
+  "mcp>=1.13.1",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest>=8.0",
+  "pytest-anyio>=0",
+  "anyio>=4.0",
+]
+
+[project.scripts]
+alexa-mcp-server = "alexa_mcp.server:main"
+
+[tool.pytest.ini_options]
+addopts = "-q"
