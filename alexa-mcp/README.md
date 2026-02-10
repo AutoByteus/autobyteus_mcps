@@ -10,6 +10,8 @@ Python MCP server for controlling Alexa routines and music actions through a bou
   - Supports bounded `play` / `stop` actions.
 - `alexa_health_check`
   - Validates adapter command availability and optional probe command.
+- `alexa_get_device_status`
+  - Queries playback/queue status for a device.
 
 All tools return structured JSON with:
 - `ok`

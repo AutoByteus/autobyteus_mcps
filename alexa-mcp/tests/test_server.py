@@ -121,3 +121,42 @@ async def test_alexa_music_control_reports_validation_error(monkeypatch: pytest.
         assert structured["error_type"] == "validation"
 
     await _run_with_session(server, run_client)
+
+
+@pytest.mark.anyio
+async def test_alexa_get_device_status_delegates_runner(monkeypatch: pytest.MonkeyPatch):
+    expected = {
+        "ok": True,
+        "action": "device_status",
+        "command": ["alexa_remote_control.sh", "-d", "Office Echo", "-q"],
+        "stdout": "{\"currentState\":\"IDLE\"}",
+        "stderr": None,
+        "exit_code": 0,
+        "error_type": None,
+        "error_message": None,
+        "routine_name": None,
+        "music_action": None,
+        "echo_device": "Office Echo",
+    }
+
+    def fake_run_device_status(*, settings, echo_device: str | None = None):
+        assert settings is not None
+        assert echo_device == "Office Echo"
+        return expected
+
+    monkeypatch.setattr(server_module, "run_device_status", fake_run_device_status)
+
+    server = server_module.create_server(
+        settings=_settings(),
+        server_config=ServerConfig(name="alexa-test"),
+    )
+
+    async def run_client(session: ClientSession) -> None:
+        result = await session.call_tool(
+            "alexa_get_device_status",
+            {"echo_device": "Office Echo"},
+        )
+        assert not result.isError
+        assert result.structuredContent == expected
+
+    await _run_with_session(server, run_client)

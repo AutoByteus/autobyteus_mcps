@@ -12,7 +12,13 @@ from .config import (
     ensure_allowed_routine,
     load_settings,
 )
-from .runner import AlexaCommandResult, run_health_check, run_music_action, run_routine
+from .runner import (
+    AlexaCommandResult,
+    run_device_status,
+    run_health_check,
+    run_music_action,
+    run_routine,
+)
 
 
 def create_server(
@@ -39,6 +45,27 @@ def create_server(
         result = run_health_check(resolved_settings)
         if context is not None:
             await context.report_progress(1, 1, "Health check complete")
+        return result
+
+    @server.tool(
+        name="alexa_get_device_status",
+        title="Get device playback status",
+        description="Query Alexa playback and queue status for the selected device.",
+        structured_output=True,
+    )
+    async def alexa_get_device_status(
+        echo_device: str | None = None,
+        *,
+        context: Context | None = None,
+    ) -> AlexaCommandResult:
+        if context is not None:
+            await context.report_progress(0, 1, "Querying Alexa device status")
+        result = run_device_status(
+            settings=resolved_settings,
+            echo_device=echo_device,
+        )
+        if context is not None:
+            await context.report_progress(1, 1, "Device status query complete")
         return result
 
     @server.tool(

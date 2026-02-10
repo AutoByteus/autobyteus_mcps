@@ -136,3 +136,19 @@ def test_run_health_check_with_probe_executes_command(monkeypatch: pytest.Monkey
 
     assert result["ok"] is True
     assert captured == ["alexa_remote_control.sh", "--cookie", "/tmp/cookie", "--version"]
+
+
+def test_run_device_status_uses_default_device(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: list[str] = []
+
+    def fake_run(command: list[str], **_: object):
+        captured.extend(command)
+        return subprocess.CompletedProcess(command, 0, stdout='{"currentState":"IDLE"}\n', stderr="")
+
+    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+    result = runner.run_device_status(_settings())
+
+    assert result["ok"] is True
+    assert result["action"] == "device_status"
+    assert result["echo_device"] == "Kitchen Echo"
+    assert captured == ["/tmp/alexa_remote_control.sh", "-d", "Kitchen Echo", "-q"]

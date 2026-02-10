@@ -88,6 +88,22 @@ def run_music_action(
     return _execute(spec, settings.timeout_seconds)
 
 
+def run_device_status(
+    settings: AlexaSettings,
+    echo_device: str | None = None,
+) -> AlexaCommandResult:
+    device = _resolve_device(settings, echo_device)
+    command = _build_passthrough_command(settings, extra_args=["-q"], echo_device=device)
+    spec = _ExecutionSpec(
+        action="device_status",
+        command=command,
+        routine_name=None,
+        music_action=None,
+        echo_device=device,
+    )
+    return _execute(spec, settings.timeout_seconds)
+
+
 def run_health_check(settings: AlexaSettings) -> AlexaCommandResult:
     if _resolve_command_path(settings.command) is None:
         return _error_result(
@@ -194,10 +210,22 @@ def _execute(spec: _ExecutionSpec, timeout_seconds: int) -> AlexaCommandResult:
 
 
 def _build_command(settings: AlexaSettings, event_value: str, echo_device: str | None) -> list[str]:
+    return _build_passthrough_command(
+        settings,
+        extra_args=[settings.event_flag, event_value],
+        echo_device=echo_device,
+    )
+
+
+def _build_passthrough_command(
+    settings: AlexaSettings,
+    extra_args: list[str],
+    echo_device: str | None,
+) -> list[str]:
     command = [settings.command, *settings.base_args]
     if echo_device:
         command.extend([settings.device_flag, echo_device])
-    command.extend([settings.event_flag, event_value])
+    command.extend(extra_args)
     return command
 
 
