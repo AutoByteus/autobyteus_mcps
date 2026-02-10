@@ -167,7 +167,7 @@ async def test_alexa_volume_control_delegates_runner(monkeypatch: pytest.MonkeyP
     expected = {
         "ok": True,
         "action": "volume_control",
-        "command": ["alexa_remote_control.sh", "-d", "Office Echo", "-e", "vol:40"],
+        "command": ["alexa_remote_control.sh", "-d", "Kitchen Echo", "-e", "vol:40"],
         "stdout": "ok",
         "stderr": None,
         "exit_code": 0,
@@ -175,14 +175,13 @@ async def test_alexa_volume_control_delegates_runner(monkeypatch: pytest.MonkeyP
         "error_message": None,
         "routine_name": None,
         "music_action": None,
-        "echo_device": "Office Echo",
+        "echo_device": "Kitchen Echo",
     }
 
-    def fake_run_volume_control(*, settings, direction: str, step: int, echo_device: str | None = None):
+    def fake_run_volume_control(*, settings, direction: str, step: int):
         assert settings is not None
         assert direction == "up"
         assert step == 10
-        assert echo_device == "Office Echo"
         return expected
 
     monkeypatch.setattr(server_module, "run_volume_control", fake_run_volume_control)
@@ -195,7 +194,7 @@ async def test_alexa_volume_control_delegates_runner(monkeypatch: pytest.MonkeyP
     async def run_client(session: ClientSession) -> None:
         result = await session.call_tool(
             "alexa_volume_control",
-            {"direction": "up", "step": 10, "echo_device": "Office Echo"},
+            {"direction": "up", "step": 10},
         )
         assert not result.isError
         assert result.structuredContent == expected

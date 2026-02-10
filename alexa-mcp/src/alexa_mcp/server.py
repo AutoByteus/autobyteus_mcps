@@ -155,7 +155,6 @@ def create_server(
     async def alexa_volume_control(
         direction: Literal["up", "down"],
         step: int = 10,
-        echo_device: str | None = None,
         *,
         context: Context | None = None,
     ) -> AlexaCommandResult:
@@ -166,13 +165,11 @@ def create_server(
                 settings=resolved_settings,
                 direction=direction,
                 step=step,
-                echo_device=echo_device,
             )
         except ConfigError as exc:
             return _validation_error(
                 action="volume_control",
                 message=str(exc),
-                echo_device=echo_device,
             )
 
         if context is not None:

@@ -109,7 +109,6 @@ def run_volume_control(
     settings: AlexaSettings,
     direction: str,
     step: int = 10,
-    echo_device: str | None = None,
 ) -> AlexaCommandResult:
     if step <= 0:
         raise ConfigError("step must be greater than zero.")
@@ -118,7 +117,7 @@ def run_volume_control(
     if normalized_direction not in {"up", "down"}:
         raise ConfigError("direction must be one of: up, down.")
 
-    device = _resolve_device(settings, echo_device)
+    device = _resolve_device(settings, None)
     current_volume_result = _read_device_volume(settings, device)
     if not current_volume_result["ok"]:
         return _error_result(
