@@ -54,6 +54,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> AlexaSettings:
     event_flag = actual_env.get("ALEXA_EVENT_FLAG", "-e").strip() or "-e"
     device_flag = actual_env.get("ALEXA_DEVICE_FLAG", "-d").strip() or "-d"
     default_device = _normalize_optional_text(actual_env.get("ALEXA_DEFAULT_DEVICE"))
+    _validate_default_device(default_device)
 
     allowed_routines = frozenset(_parse_csv(actual_env.get("ALEXA_ALLOWED_ROUTINES", "")))
     if not allowed_routines:
@@ -162,3 +163,20 @@ def _normalize_optional_text(value: str | None) -> str | None:
         return None
     normalized = value.strip()
     return normalized if normalized else None
+
+
+def _validate_default_device(default_device: str | None) -> None:
+    if default_device is None:
+        return
+
+    if default_device.upper().startswith("REPLACE_WITH_"):
+        raise ConfigError(
+            "ALEXA_DEFAULT_DEVICE appears to be a placeholder. "
+            "Set the real Echo name or unset ALEXA_DEFAULT_DEVICE."
+        )
+
+    if default_device.startswith("<") and default_device.endswith(">"):
+        raise ConfigError(
+            "ALEXA_DEFAULT_DEVICE appears to be a placeholder. "
+            "Set the real Echo name or unset ALEXA_DEFAULT_DEVICE."
+        )

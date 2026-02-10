@@ -31,6 +31,7 @@ All tools return structured JSON with:
   - Comma-separated allowed actions.
 - `ALEXA_DEFAULT_DEVICE` (optional):
   - Default Echo device used when `echo_device` is omitted.
+  - Must be a real device name (placeholder values are rejected).
 - `ALEXA_TIMEOUT_SECONDS` (optional, default `20`):
   - Positive integer command timeout.
 - `ALEXA_EVENT_FLAG` (optional, default `-e`)
@@ -88,38 +89,33 @@ Quick local check:
 ./scripts/alexa_adapter.sh -e "textcommand:what time is it"
 ```
 
-## Example Config (AutoByteus MCP Import)
+## Codex Config (config.toml)
 
-```json
-{
-  "mcpServers": {
-    "alexa-home": {
-      "transport_type": "stdio",
-      "enabled": true,
-      "tool_name_prefix": "alexa",
-      "command": "uv",
-      "args": [
-        "--directory",
-        "<PATH_TO_AUTOBYTEUS_MCPS>/alexa-mcp",
-        "run",
-        "python",
-        "-m",
-        "alexa_mcp.server"
-      ],
-      "env": {
-        "ALEXA_COMMAND": "<PATH_TO_AUTOBYTEUS_MCPS>/alexa-mcp/scripts/alexa_adapter.sh",
-        "ALEXA_COMMAND_BASE_ARGS": "",
-        "ALEXA_REMOTE_CONTROL_SCRIPT": "<PATH_TO_AUTOBYTEUS_MCPS>/alexa-mcp/scripts/vendor/alexa-remote-control/alexa_remote_control.sh",
-        "ALEXA_REFRESH_TOKEN_FILE": "<PATH_TO_AUTOBYTEUS_MCPS>/alexa-mcp/.secrets/refresh_token",
-        "AMAZON": "amazon.de",
-        "ALEXA": "alexa.amazon.de",
-        "ALEXA_ALLOWED_ROUTINES": "plug_on,plug_off,play_focus_music,stop_music",
-        "ALEXA_ALLOWED_MUSIC_ACTIONS": "play,stop",
-        "ALEXA_DEFAULT_DEVICE": "<YOUR_ECHO_DEVICE_NAME>"
-      }
-    }
-  }
-}
+Add this block to `~/.codex/config.toml`.
+Replace placeholders with absolute paths and your actual Echo name.
+
+```toml
+[mcp_servers.alexa_home]
+command = "uv"
+args = [
+  "--directory",
+  "<ABS_PATH_TO_AUTOBYTEUS_MCPS>/alexa-mcp",
+  "run",
+  "python",
+  "-m",
+  "alexa_mcp.server",
+]
+
+[mcp_servers.alexa_home.env]
+ALEXA_COMMAND = "<ABS_PATH_TO_AUTOBYTEUS_MCPS>/alexa-mcp/scripts/alexa_adapter.sh"
+ALEXA_COMMAND_BASE_ARGS = ""
+ALEXA_REMOTE_CONTROL_SCRIPT = "<ABS_PATH_TO_AUTOBYTEUS_MCPS>/alexa-mcp/scripts/vendor/alexa-remote-control/alexa_remote_control.sh"
+ALEXA_REFRESH_TOKEN_FILE = "<ABS_PATH_TO_AUTOBYTEUS_MCPS>/alexa-mcp/.secrets/refresh_token"
+AMAZON = "amazon.de"
+ALEXA = "alexa.amazon.de"
+ALEXA_ALLOWED_ROUTINES = "plug_on,plug_off,play_focus_music,stop_music"
+ALEXA_ALLOWED_MUSIC_ACTIONS = "play,stop"
+ALEXA_DEFAULT_DEVICE = "<YOUR_ECHO_DEVICE_NAME>"
 ```
 
 ## Tests
