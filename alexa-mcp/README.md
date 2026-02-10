@@ -79,7 +79,7 @@ Then set env (recommended: token file fallback):
 ```bash
 export AMAZON='amazon.de'
 export ALEXA='alexa.amazon.de'
-export ALEXA_REFRESH_TOKEN_FILE='/Users/normy/autobyteus_org/autobyteus_mcps/alexa-mcp/.secrets/refresh_token'
+export ALEXA_REFRESH_TOKEN_FILE='./.secrets/refresh_token'
 ```
 
 Quick local check:
@@ -100,17 +100,17 @@ Quick local check:
       "command": "uv",
       "args": [
         "--directory",
-        "/Users/normy/autobyteus_org/autobyteus_mcps/alexa-mcp",
+        "./autobyteus_mcps/alexa-mcp",
         "run",
         "python",
         "-m",
         "alexa_mcp.server"
       ],
       "env": {
-        "ALEXA_COMMAND": "/Users/normy/autobyteus_org/autobyteus_mcps/alexa-mcp/scripts/alexa_adapter.sh",
+        "ALEXA_COMMAND": "./autobyteus_mcps/alexa-mcp/scripts/alexa_adapter.sh",
         "ALEXA_COMMAND_BASE_ARGS": "",
-        "ALEXA_REMOTE_CONTROL_SCRIPT": "/Users/normy/autobyteus_org/autobyteus_mcps/alexa-mcp/scripts/vendor/alexa-remote-control/alexa_remote_control.sh",
-        "ALEXA_REFRESH_TOKEN_FILE": "/Users/normy/autobyteus_org/autobyteus_mcps/alexa-mcp/.secrets/refresh_token",
+        "ALEXA_REMOTE_CONTROL_SCRIPT": "./autobyteus_mcps/alexa-mcp/scripts/vendor/alexa-remote-control/alexa_remote_control.sh",
+        "ALEXA_REFRESH_TOKEN_FILE": "./autobyteus_mcps/alexa-mcp/.secrets/refresh_token",
         "AMAZON": "amazon.de",
         "ALEXA": "alexa.amazon.de",
         "ALEXA_ALLOWED_ROUTINES": "plug_on,plug_off,play_focus_music,stop_music",
