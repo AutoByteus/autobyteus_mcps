@@ -12,6 +12,8 @@ Python MCP server for controlling Alexa routines and music actions through a bou
   - Validates adapter command availability and optional probe command.
 - `alexa_get_device_status`
   - Queries playback/queue status for a device.
+- `alexa_volume_control`
+  - Turns volume up/down by a bounded step.
 
 All tools return structured JSON with:
 - `ok`

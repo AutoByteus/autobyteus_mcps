@@ -160,3 +160,65 @@ async def test_alexa_get_device_status_delegates_runner(monkeypatch: pytest.Monk
         assert result.structuredContent == expected
 
     await _run_with_session(server, run_client)
+
+
+@pytest.mark.anyio
+async def test_alexa_volume_control_delegates_runner(monkeypatch: pytest.MonkeyPatch):
+    expected = {
+        "ok": True,
+        "action": "volume_control",
+        "command": ["alexa_remote_control.sh", "-d", "Office Echo", "-e", "vol:40"],
+        "stdout": "ok",
+        "stderr": None,
+        "exit_code": 0,
+        "error_type": None,
+        "error_message": None,
+        "routine_name": None,
+        "music_action": None,
+        "echo_device": "Office Echo",
+    }
+
+    def fake_run_volume_control(*, settings, direction: str, step: int, echo_device: str | None = None):
+        assert settings is not None
+        assert direction == "up"
+        assert step == 10
+        assert echo_device == "Office Echo"
+        return expected
+
+    monkeypatch.setattr(server_module, "run_volume_control", fake_run_volume_control)
+
+    server = server_module.create_server(
+        settings=_settings(),
+        server_config=ServerConfig(name="alexa-test"),
+    )
+
+    async def run_client(session: ClientSession) -> None:
+        result = await session.call_tool(
+            "alexa_volume_control",
+            {"direction": "up", "step": 10, "echo_device": "Office Echo"},
+        )
+        assert not result.isError
+        assert result.structuredContent == expected
+
+    await _run_with_session(server, run_client)
+
+
+@pytest.mark.anyio
+async def test_alexa_volume_control_reports_validation_error(monkeypatch: pytest.MonkeyPatch):
+    server = server_module.create_server(
+        settings=_settings(),
+        server_config=ServerConfig(name="alexa-test"),
+    )
+
+    async def run_client(session: ClientSession) -> None:
+        result = await session.call_tool(
+            "alexa_volume_control",
+            {"direction": "up", "step": 0},
+        )
+        assert not result.isError
+        structured = result.structuredContent
+        assert structured is not None
+        assert structured["ok"] is False
+        assert structured["error_type"] == "validation"
+
+    await _run_with_session(server, run_client)

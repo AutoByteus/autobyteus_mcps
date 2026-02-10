@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import re
 import shutil
 import subprocess
 from typing import TypedDict
@@ -96,6 +97,67 @@ def run_device_status(
     command = _build_passthrough_command(settings, extra_args=["-q"], echo_device=device)
     spec = _ExecutionSpec(
         action="device_status",
+        command=command,
+        routine_name=None,
+        music_action=None,
+        echo_device=device,
+    )
+    return _execute(spec, settings.timeout_seconds)
+
+
+def run_volume_control(
+    settings: AlexaSettings,
+    direction: str,
+    step: int = 10,
+    echo_device: str | None = None,
+) -> AlexaCommandResult:
+    if step <= 0:
+        raise ConfigError("step must be greater than zero.")
+
+    normalized_direction = direction.lower()
+    if normalized_direction not in {"up", "down"}:
+        raise ConfigError("direction must be one of: up, down.")
+
+    device = _resolve_device(settings, echo_device)
+    current_volume_result = _read_device_volume(settings, device)
+    if not current_volume_result["ok"]:
+        return _error_result(
+            action="volume_control",
+            command=current_volume_result["command"],
+            error_type=current_volume_result["error_type"] or "execution",
+            error_message=(
+                current_volume_result["error_message"] or "Failed to read current device volume."
+            ),
+            routine_name=None,
+            music_action=None,
+            echo_device=device,
+            stdout=current_volume_result["stdout"],
+            stderr=current_volume_result["stderr"],
+            exit_code=current_volume_result["exit_code"],
+        )
+
+    try:
+        current_volume = _parse_volume_from_output(current_volume_result["stdout"])
+    except ConfigError as exc:
+        return _error_result(
+            action="volume_control",
+            command=current_volume_result["command"],
+            error_type="execution",
+            error_message=str(exc),
+            routine_name=None,
+            music_action=None,
+            echo_device=device,
+            stdout=current_volume_result["stdout"],
+            stderr=current_volume_result["stderr"],
+            exit_code=current_volume_result["exit_code"],
+        )
+
+    delta = step if normalized_direction == "up" else -step
+    target_volume = max(0, min(100, current_volume + delta))
+
+    command = _build_command(settings, event_value=f"vol:{target_volume}", echo_device=device)
+    spec = _ExecutionSpec(
+        action="volume_control",
         command=command,
         routine_name=None,
         music_action=None,
@@ -227,6 +289,32 @@ def _build_passthrough_command(
         command.extend([settings.device_flag, echo_device])
     command.extend(extra_args)
     return command
+
+
+def _read_device_volume(settings: AlexaSettings, echo_device: str | None) -> AlexaCommandResult:
+    command = _build_passthrough_command(settings, extra_args=["-z"], echo_device=echo_device)
+    spec = _ExecutionSpec(
+        action="device_volume_read",
+        command=command,
+        routine_name=None,
+        music_action=None,
+        echo_device=echo_device,
+    )
+    return _execute(spec, settings.timeout_seconds)
+
+
+def _parse_volume_from_output(stdout: str | None) -> int:
+    if stdout is None:
+        raise ConfigError("Unable to parse current volume from empty output.")
+
+    for line in reversed(stdout.splitlines()):
+        stripped = line.strip()
+        if re.fullmatch(r"\d{1,3}", stripped):
+            value = int(stripped)
+            if 0 <= value <= 100:
+                return value
+
+    raise ConfigError("Unable to parse current volume from adapter output.")
 
 
 def _resolve_device(settings: AlexaSettings, echo_device: str | None) -> str | None:

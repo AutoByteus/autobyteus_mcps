@@ -18,6 +18,7 @@ from .runner import (
     run_health_check,
     run_music_action,
     run_routine,
+    run_volume_control,
 )
 
 
@@ -140,6 +141,42 @@ def create_server(
 
         if context is not None:
             await context.report_progress(1, 1, "Music control command completed")
+        return result
+
+    @server.tool(
+        name="alexa_volume_control",
+        title="Adjust Alexa volume",
+        description=(
+            "Adjust device volume up or down by step. "
+            "Reads current volume and applies bounded change (0-100)."
+        ),
+        structured_output=True,
+    )
+    async def alexa_volume_control(
+        direction: Literal["up", "down"],
+        step: int = 10,
+        echo_device: str | None = None,
+        *,
+        context: Context | None = None,
+    ) -> AlexaCommandResult:
+        if context is not None:
+            await context.report_progress(0, 1, f"Adjusting volume {direction} by {step}")
+        try:
+            result = run_volume_control(
+                settings=resolved_settings,
+                direction=direction,
+                step=step,
+                echo_device=echo_device,
+            )
+        except ConfigError as exc:
+            return _validation_error(
+                action="volume_control",
+                message=str(exc),
+                echo_device=echo_device,
+            )
+
+        if context is not None:
+            await context.report_progress(1, 1, "Volume control command completed")
         return result
 
     return server

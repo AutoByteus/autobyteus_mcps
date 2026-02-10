@@ -152,3 +152,57 @@ def test_run_device_status_uses_default_device(monkeypatch: pytest.MonkeyPatch) 
     assert result["action"] == "device_status"
     assert result["echo_device"] == "Kitchen Echo"
     assert captured == ["/tmp/alexa_remote_control.sh", "-d", "Kitchen Echo", "-q"]
+
+
+def test_run_volume_control_up_reads_and_sets_target(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **_: object):
+        calls.append(command)
+        if command[-1] == "-z":
+            return subprocess.CompletedProcess(command, 0, stdout="20\n", stderr="")
+        return subprocess.CompletedProcess(command, 0, stdout="ok\n", stderr="")
+
+    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+    result = runner.run_volume_control(_settings(), direction="up", step=15)
+
+    assert result["ok"] is True
+    assert result["action"] == "volume_control"
+    assert calls == [
+        ["/tmp/alexa_remote_control.sh", "-d", "Kitchen Echo", "-z"],
+        ["/tmp/alexa_remote_control.sh", "-d", "Kitchen Echo", "-e", "vol:35"],
+    ]
+
+
+def test_run_volume_control_down_clamps_to_zero(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **_: object):
+        calls.append(command)
+        if command[-1] == "-z":
+            return subprocess.CompletedProcess(command, 0, stdout="3\n", stderr="")
+        return subprocess.CompletedProcess(command, 0, stdout="ok\n", stderr="")
+
+    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+    result = runner.run_volume_control(_settings(), direction="down", step=10)
+
+    assert result["ok"] is True
+    assert result["action"] == "volume_control"
+    assert calls[-1] == ["/tmp/alexa_remote_control.sh", "-d", "Kitchen Echo", "-e", "vol:0"]
+
+
+def test_run_volume_control_maps_volume_parse_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_run(command: list[str], **_: object):
+        return subprocess.CompletedProcess(command, 0, stdout="volume unknown\n", stderr="")
+
+    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+    result = runner.run_volume_control(_settings(), direction="up", step=10)
+
+    assert result["ok"] is False
+    assert result["error_type"] == "execution"
+    assert "Unable to parse current volume" in (result["error_message"] or "")
+
+
+def test_run_volume_control_rejects_invalid_step() -> None:
+    with pytest.raises(ConfigError, match="step must be greater than zero"):
+        runner.run_volume_control(_settings(), direction="up", step=0)
