@@ -34,6 +34,11 @@ class _OutputSignature(TypedDict):
     mtime_ns: int
 
 
+class _ResolvedOutputPath(TypedDict):
+    path: Path
+    is_auto_generated: bool
+
+
 def run_speak(
     settings: TtsSettings,
     text: str,
@@ -68,7 +73,7 @@ def run_speak(
         )
 
     try:
-        resolved_output = _resolve_output_path(output_path, settings.output_dir)
+        resolved_output_info = _resolve_output_path(output_path, settings.output_dir)
     except ConfigError as exc:
         return _error_result(
             backend=selection.backend,
@@ -77,6 +82,8 @@ def run_speak(
             error_type="validation",
             error_message=str(exc),
         )
+    resolved_output = resolved_output_info["path"]
+    auto_generated_output = resolved_output_info["is_auto_generated"]
 
     if selection.backend == "mlx_audio":
         effective_instruct = requested_instruct or settings.mlx_default_instruct
@@ -244,6 +251,14 @@ def run_speak(
                 "from command output. Check your default audio output device."
             )
 
+    if auto_generated_output and settings.delete_auto_output:
+        try:
+            resolved_output.unlink(missing_ok=True)
+        except OSError:
+            warnings.append(
+                f"Generated audio cleanup failed for {resolved_output}."
+            )
+
     return SpeakResult(
         ok=True,
         backend=selection.backend,
@@ -341,7 +356,8 @@ def _build_llama_command(
     return command
 
 
-def _resolve_output_path(candidate: str | None, default_output_dir: str) -> Path:
+def _resolve_output_path(candidate: str | None, default_output_dir: str) -> _ResolvedOutputPath:
+    is_auto_generated = candidate is None
     if candidate is None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         raw_path = Path(default_output_dir) / f"speak_{timestamp}.wav"
@@ -357,7 +373,10 @@ def _resolve_output_path(candidate: str | None, default_output_dir: str) -> Path
         raise ConfigError("output_path must end with .wav")
 
     raw_path.parent.mkdir(parents=True, exist_ok=True)
-    return raw_path.resolve(strict=False)
+    return _ResolvedOutputPath(
+        path=raw_path.resolve(strict=False),
+        is_auto_generated=is_auto_generated,
+    )
 
 
 def _build_linux_play_command(

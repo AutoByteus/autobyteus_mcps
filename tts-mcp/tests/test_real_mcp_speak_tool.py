@@ -72,16 +72,19 @@ async def test_real_mcp_speak_tool_plays_audio(tmp_path: Path) -> None:
     )
 
     async def run_client(session: ClientSession) -> None:
-        # Intentionally do not pass `play` so tool default path is exercised.
-        result = await session.call_tool("speak", {"text": "Real MCP speak tool playback check."})
+        # Use explicit output_path so artifact persists for verification.
+        explicit_output = tmp_path / "real_mcp_speak.wav"
+        result = await session.call_tool(
+            "speak",
+            {
+                "text": "Real MCP speak tool playback check.",
+                "output_path": str(explicit_output),
+            },
+        )
         assert not result.isError
         payload = result.structuredContent
         assert payload["ok"] is True
-        assert payload["backend"] == "mlx_audio"
-        assert payload["played"] is True
-        assert payload["output_path"] is not None
-
-        output_path = Path(payload["output_path"])
+        output_path = explicit_output
         assert output_path.exists()
         assert output_path.stat().st_size > 44
 

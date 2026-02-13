@@ -81,6 +81,94 @@ def test_run_speak_mlx_success(monkeypatch, tmp_path: Path) -> None:
     assert result["warnings"] == []
 
 
+def test_run_speak_deletes_auto_output_by_default(monkeypatch, tmp_path: Path) -> None:
+    settings = load_settings({"TTS_MCP_OUTPUT_DIR": str(tmp_path)})
+
+    monkeypatch.setattr(
+        runner,
+        "select_backend",
+        lambda **_: BackendSelection(backend="mlx_audio", command=settings.mlx_command, host=_mlx_host()),
+    )
+
+    def fake_run(command, **kwargs):
+        prefix = command[command.index("--file_prefix") + 1]
+        Path(f"{prefix}.wav").write_bytes(_MIN_VALID_WAV_BYTES)
+        return subprocess.CompletedProcess(command, 0, "ok", "")
+
+    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+
+    result = runner.run_speak(
+        settings=settings,
+        text="Hello from MLX",
+        play=False,
+    )
+
+    assert result["ok"] is True
+    assert result["output_path"] is not None
+    assert not Path(result["output_path"]).exists()
+
+
+def test_run_speak_keeps_explicit_output_path(monkeypatch, tmp_path: Path) -> None:
+    settings = load_settings({"TTS_MCP_OUTPUT_DIR": str(tmp_path)})
+
+    monkeypatch.setattr(
+        runner,
+        "select_backend",
+        lambda **_: BackendSelection(backend="mlx_audio", command=settings.mlx_command, host=_mlx_host()),
+    )
+
+    output_file = tmp_path / "explicit.wav"
+
+    def fake_run(command, **kwargs):
+        prefix = command[command.index("--file_prefix") + 1]
+        Path(f"{prefix}.wav").write_bytes(_MIN_VALID_WAV_BYTES)
+        return subprocess.CompletedProcess(command, 0, "ok", "")
+
+    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+
+    result = runner.run_speak(
+        settings=settings,
+        text="Hello from MLX",
+        output_path=str(output_file),
+        play=False,
+    )
+
+    assert result["ok"] is True
+    assert output_file.exists()
+
+
+def test_run_speak_keeps_auto_output_when_cleanup_disabled(monkeypatch, tmp_path: Path) -> None:
+    settings = load_settings(
+        {
+            "TTS_MCP_OUTPUT_DIR": str(tmp_path),
+            "TTS_MCP_DELETE_AUTO_OUTPUT": "false",
+        }
+    )
+
+    monkeypatch.setattr(
+        runner,
+        "select_backend",
+        lambda **_: BackendSelection(backend="mlx_audio", command=settings.mlx_command, host=_mlx_host()),
+    )
+
+    def fake_run(command, **kwargs):
+        prefix = command[command.index("--file_prefix") + 1]
+        Path(f"{prefix}.wav").write_bytes(_MIN_VALID_WAV_BYTES)
+        return subprocess.CompletedProcess(command, 0, "ok", "")
+
+    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+
+    result = runner.run_speak(
+        settings=settings,
+        text="Hello from MLX",
+        play=False,
+    )
+
+    assert result["ok"] is True
+    assert result["output_path"] is not None
+    assert Path(result["output_path"]).exists()
+
+
 def test_run_speak_mlx_marks_played_only_when_confirmed(monkeypatch, tmp_path: Path) -> None:
     settings = load_settings({"TTS_MCP_OUTPUT_DIR": str(tmp_path)})
 

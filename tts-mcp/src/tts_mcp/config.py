@@ -59,6 +59,7 @@ class TtsSettings:
     default_backend: BackendName
     timeout_seconds: int
     output_dir: str
+    delete_auto_output: bool
     enforce_latest_runtime: bool
     version_check_timeout_seconds: int
     auto_install_runtime: bool
@@ -89,6 +90,10 @@ def load_settings(env: Mapping[str, str] | None = None) -> TtsSettings:
         "TTS_MCP_TIMEOUT_SECONDS",
     )
     output_dir = actual_env.get("TTS_MCP_OUTPUT_DIR", "outputs").strip() or "outputs"
+    delete_auto_output = _parse_bool(
+        actual_env.get("TTS_MCP_DELETE_AUTO_OUTPUT", "true"),
+        "TTS_MCP_DELETE_AUTO_OUTPUT",
+    )
     enforce_latest_runtime = _parse_bool(
         actual_env.get("TTS_MCP_ENFORCE_LATEST", "true"),
         "TTS_MCP_ENFORCE_LATEST",
@@ -160,6 +165,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> TtsSettings:
         default_backend=default_backend,
         timeout_seconds=timeout_seconds,
         output_dir=output_dir,
+        delete_auto_output=delete_auto_output,
         enforce_latest_runtime=enforce_latest_runtime,
         version_check_timeout_seconds=version_check_timeout_seconds,
         auto_install_runtime=auto_install_runtime,

@@ -10,6 +10,7 @@ def test_load_settings_defaults() -> None:
 
     assert settings.default_backend == "auto"
     assert settings.timeout_seconds == 180
+    assert settings.delete_auto_output is True
     assert settings.enforce_latest_runtime is True
     assert settings.version_check_timeout_seconds == 6
     assert settings.auto_install_runtime is True

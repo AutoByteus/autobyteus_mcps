@@ -5,7 +5,7 @@ Python MCP server exposing one tool, `speak`, with backend auto-detection:
 - Apple Silicon macOS -> `mlx_audio.tts.generate`
 - Linux + NVIDIA -> `llama-tts` (llama.cpp)
 
-If the host is unsupported or required commands are missing, the tool returns structured errors.
+If the host is unsupported or required commands are missing, the tool returns `ok=false`.
 
 Model choice is config-driven via MCP environment variables (no per-call model switching).
 Runtime freshness is checked automatically before speak generation.
@@ -15,7 +15,7 @@ Runtime freshness is checked automatically before speak generation.
 - `speak`
   - Input:
     - `text` (required)
-    - `output_path` (optional, `.wav`)
+    - `output_path` (optional, `.wav`; set this if you want to keep the generated file)
     - `play` (optional, default `true`)
     - `voice` (optional; MLX backend)
     - `speed` (optional, default `1.0`)
@@ -23,10 +23,9 @@ Runtime freshness is checked automatically before speak generation.
     - `backend` (optional override: `auto`, `mlx_audio`, `llama_cpp`)
     - `instruct` (optional; MLX style/voice-design prompt)
   - Output:
-    - `ok`, `backend`, `command`, `output_path`, `played`, `warnings`,
-      `stdout`, `stderr`, `exit_code`, `error_type`, `error_message`
-    - `played=true` means playback was confirmed by backend/runtime output.
-    - If selected runtime is not confirmed latest and `TTS_MCP_ENFORCE_LATEST=true`, `speak` returns a dependency error.
+    - Success: `{"ok": true}`
+    - Failure: `{"ok": false, "reason": "<short failure reason>"}`
+    - If selected runtime is not confirmed latest and `TTS_MCP_ENFORCE_LATEST=true`, `speak` returns `ok=false` with a reason.
 
 ## Supported MLX Models
 
@@ -47,6 +46,7 @@ General:
 - `TTS_MCP_BACKEND` (`auto` | `mlx_audio` | `llama_cpp`, default `auto`)
 - `TTS_MCP_TIMEOUT_SECONDS` (default `180`)
 - `TTS_MCP_OUTPUT_DIR` (default `outputs`)
+- `TTS_MCP_DELETE_AUTO_OUTPUT` (`true` | `false`, default `true`; deletes auto-generated `speak_*.wav` files after successful playback/generation)
 - `TTS_MCP_LINUX_PLAYER` (`auto` | `ffplay` | `aplay` | `paplay` | `none`)
 - `TTS_MCP_ENFORCE_LATEST` (`true` | `false`, default `true`)
 - `TTS_MCP_VERSION_CHECK_TIMEOUT_SECONDS` (default `6`)
@@ -154,7 +154,7 @@ TTS_MCP_RUN_REAL_MCP_SPEAK=1 \
 uv run python -m pytest -q tests/test_real_mcp_speak_tool.py
 ```
 
-This verifies end-to-end MCP tool invocation and playback confirmation (`played=true`).
+This verifies end-to-end MCP tool invocation and confirms a real WAV is produced in `TTS_MCP_OUTPUT_DIR`.
 
 ## Runtime Version Policy
 

@@ -7,7 +7,7 @@ from mcp.server.fastmcp import Context, FastMCP
 
 from .config import ServerConfig, TtsSettings, load_settings
 from .runtime_bootstrap import bootstrap_runtime
-from .runner import SpeakResult, run_speak
+from .runner import run_speak
 
 
 def create_server(
@@ -45,7 +45,7 @@ def create_server(
         instruct: str | None = None,
         *,
         context: Context | None = None,
-    ) -> SpeakResult:
+    ) -> dict[str, object]:
         if context is not None:
             await context.report_progress(0, 1, "Preparing speech generation")
 
@@ -64,7 +64,10 @@ def create_server(
         if context is not None:
             await context.report_progress(1, 1, "Speech generation completed")
 
-        return result
+        if result["ok"]:
+            return {"ok": True}
+        reason = (result.get("error_message") or "").strip() or "Speech generation failed."
+        return {"ok": False, "reason": reason}
 
     return server
 

@@ -36,7 +36,7 @@ async def _run_with_session(server, client_callable):
 
 @pytest.mark.anyio
 async def test_speak_tool_delegates_runner(monkeypatch):
-    expected = {
+    runner_result = {
         "ok": True,
         "backend": "mlx_audio",
         "platform": "Darwin",
@@ -52,8 +52,44 @@ async def test_speak_tool_delegates_runner(monkeypatch):
         "error_type": None,
         "error_message": None,
     }
+    expected = {"ok": True}
 
-    monkeypatch.setattr(server_module, "run_speak", lambda **_: expected)
+    monkeypatch.setattr(server_module, "run_speak", lambda **_: runner_result)
+
+    server = server_module.create_server(
+        settings=load_settings({"TTS_MCP_AUTO_INSTALL_RUNTIME": "false"}),
+        server_config=ServerConfig(name="tts-test"),
+    )
+
+    async def run_client(session: ClientSession) -> None:
+        result = await session.call_tool("speak", {"text": "hello"})
+        assert not result.isError
+        assert result.structuredContent == expected
+
+    await _run_with_session(server, run_client)
+
+
+@pytest.mark.anyio
+async def test_speak_tool_returns_reason_on_failure(monkeypatch):
+    runner_result = {
+        "ok": False,
+        "backend": "mlx_audio",
+        "platform": "Darwin",
+        "machine": "arm64",
+        "command": ["mlx_audio.tts.generate", "--text", "hi"],
+        "output_path": None,
+        "played": False,
+        "playback_command": None,
+        "warnings": [],
+        "stdout": None,
+        "stderr": "bad",
+        "exit_code": 1,
+        "error_type": "execution",
+        "error_message": "Backend command failed.",
+    }
+    expected = {"ok": False, "reason": "Backend command failed."}
+
+    monkeypatch.setattr(server_module, "run_speak", lambda **_: runner_result)
 
     server = server_module.create_server(
         settings=load_settings({"TTS_MCP_AUTO_INSTALL_RUNTIME": "false"}),
