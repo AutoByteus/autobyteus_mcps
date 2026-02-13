@@ -1,0 +1,13 @@
+.venv/
+.venv-mlx/
+.tools/
+.pytest_cache/
+__pycache__/
+*.pyc
+
+outputs/
+real_smoke_outputs/
+benchmark/audio_outputs/
+
+src/*.egg-info/
+src/*/*.egg-info/

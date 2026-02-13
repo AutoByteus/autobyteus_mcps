@@ -1,0 +1,148 @@
+{
+  "generated_at_utc": "2026-02-13T14:50:14.937151+00:00",
+  "host": {
+    "platform": "macOS-26.2-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "python_version": "3.13.9",
+    "mlx_audio_version": "0.3.1"
+  },
+  "config": {
+    "warmup_runs": 1,
+    "measure_runs": 3
+  },
+  "results": [
+    {
+      "model_preset": "kokoro_fast",
+      "model_id": "mlx-community/Kokoro-82M-bf16",
+      "text_case": "short",
+      "text_char_count": 43,
+      "runs": 3,
+      "latency_s": {
+        "mean": 4.733288680665889,
+        "median": 4.719667249999475,
+        "p95_approx": 4.783324166999591,
+        "min": 4.6968746249986,
+        "max": 4.783324166999591
+      },
+      "audio_duration_s": {
+        "mean": 3.0750000000000006,
+        "median": 3.075
+      },
+      "rtf": {
+        "mean": 1.5392808717612645,
+        "median": 1.534851138211211
+      }
+    },
+    {
+      "model_preset": "qwen_base_hq",
+      "model_id": "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-bf16",
+      "text_case": "short",
+      "text_char_count": 43,
+      "runs": 3,
+      "latency_s": {
+        "mean": 7.39595483366611,
+        "median": 7.501969458999156,
+        "p95_approx": 8.107767334000528,
+        "min": 6.578127707998647,
+        "max": 8.107767334000528
+      },
+      "audio_duration_s": {
+        "mean": 2.9066666666666663,
+        "median": 3.04
+      },
+      "rtf": {
+        "mean": 2.683394130743467,
+        "median": 2.4677531115128803
+      }
+    },
+    {
+      "model_preset": "qwen_voicedesign_hq",
+      "model_id": "mlx-community/Qwen3-TTS-12Hz-1.7B-VoiceDesign-bf16",
+      "text_case": "short",
+      "text_char_count": 43,
+      "runs": 3,
+      "latency_s": {
+        "mean": 7.463459694333626,
+        "median": 7.415845208000974,
+        "p95_approx": 7.588234374999956,
+        "min": 7.38629949999995,
+        "max": 7.588234374999956
+      },
+      "audio_duration_s": {
+        "mean": 3.013333333333333,
+        "median": 2.96
+      },
+      "rtf": {
+        "mean": 2.4776169885858006,
+        "median": 2.495371452702686
+      }
+    },
+    {
+      "model_preset": "kokoro_fast",
+      "model_id": "mlx-community/Kokoro-82M-bf16",
+      "text_case": "medium",
+      "text_char_count": 189,
+      "runs": 3,
+      "latency_s": {
+        "mean": 4.995206819333059,
+        "median": 5.007780874999298,
+        "p95_approx": 5.020500250000623,
+        "min": 4.957339332999254,
+        "max": 5.020500250000623
+      },
+      "audio_duration_s": {
+        "mean": 11.6,
+        "median": 11.6
+      },
+      "rtf": {
+        "mean": 0.43062127752871193,
+        "median": 0.4317052478447671
+      }
+    },
+    {
+      "model_preset": "qwen_base_hq",
+      "model_id": "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-bf16",
+      "text_case": "medium",
+      "text_char_count": 189,
+      "runs": 3,
+      "latency_s": {
+        "mean": 13.143200305332963,
+        "median": 13.143509249999624,
+        "p95_approx": 13.513909790999605,
+        "min": 12.77218187499966,
+        "max": 13.513909790999605
+      },
+      "audio_duration_s": {
+        "mean": 9.76,
+        "median": 9.6
+      },
+      "rtf": {
+        "mean": 1.348048022848613,
+        "median": 1.3304356119791314
+      }
+    },
+    {
+      "model_preset": "qwen_voicedesign_hq",
+      "model_id": "mlx-community/Qwen3-TTS-12Hz-1.7B-VoiceDesign-bf16",
+      "text_case": "medium",
+      "text_char_count": 189,
+      "runs": 3,
+      "latency_s": {
+        "mean": 14.220227167000607,
+        "median": 14.10399475000122,
+        "p95_approx": 14.73384195899962,
+        "min": 13.822844792000978,
+        "max": 14.73384195899962
+      },
+      "audio_duration_s": {
+        "mean": 10.986666666666666,
+        "median": 10.96
+      },
+      "rtf": {
+        "mean": 1.2965419130583267,
+        "median": 1.286860834854126
+      }
+    }
+  ],
+  "markdown_summary": "| Model | Text | Mean Latency (s) | Median (s) | Approx P95 (s) | Mean Audio (s) | Mean RTF |\n| --- | --- | ---: | ---: | ---: | ---: | ---: |\n| kokoro_fast | short | 4.73 | 4.72 | 4.78 | 3.08 | 1.54 |\n| qwen_base_hq | short | 7.40 | 7.50 | 8.11 | 2.91 | 2.68 |\n| qwen_voicedesign_hq | short | 7.46 | 7.42 | 7.59 | 3.01 | 2.48 |\n| kokoro_fast | medium | 5.00 | 5.01 | 5.02 | 11.60 | 0.43 |\n| qwen_base_hq | medium | 13.14 | 13.14 | 13.51 | 9.76 | 1.35 |\n| qwen_voicedesign_hq | medium | 14.22 | 14.10 | 14.73 | 10.99 | 1.30 |"
+}
