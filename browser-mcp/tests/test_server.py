@@ -8,7 +8,7 @@ from mcp.client.session import ClientSession
 from mcp.shared.message import SessionMessage
 
 import browser_mcp.server as browser_server
-import browser_mcp.sessions as browser_sessions
+import browser_mcp.tabs as browser_tabs
 
 
 async def _run_with_session(server, client_callable):
@@ -89,6 +89,39 @@ class FakePage:
     async def evaluate(self, script: str, arg: object | None = None):
         self.last_script = script
         self.last_arg = arg
+        if isinstance(arg, dict) and arg.get("schemaVersion") == "autobyteus-dom-snapshot-v1":
+            return {
+                "schema_version": "autobyteus-dom-snapshot-v1",
+                "total_candidates": 3,
+                "returned_elements": 2,
+                "truncated": False,
+                "elements": [
+                    {
+                        "element_id": "e1",
+                        "tag_name": "button",
+                        "dom_id": "submit",
+                        "css_selector": "#submit",
+                        "role": "button",
+                        "name": "Submit",
+                        "text": "Submit",
+                        "href": None,
+                        "value": None,
+                        "bounding_box": {"x": 10, "y": 20, "width": 100, "height": 30},
+                    },
+                    {
+                        "element_id": "e2",
+                        "tag_name": "a",
+                        "dom_id": None,
+                        "css_selector": "a:nth-of-type(1)",
+                        "role": None,
+                        "name": None,
+                        "text": "Learn more",
+                        "href": "https://example.com/docs",
+                        "value": None,
+                        "bounding_box": {"x": 10, "y": 60, "width": 90, "height": 20},
+                    },
+                ],
+            }
         return {"script": script, "arg": arg}
 
     async def screenshot(self, path: str, **_kwargs):
@@ -115,113 +148,168 @@ class FakeUIIntegrator:
 
 
 def _create_server_with_fake_ui():
-    browser_sessions.create_integrator = lambda: FakeUIIntegrator()
     return browser_server.create_server()
+
+@pytest.fixture(autouse=True)
+def _patch_create_integrator(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(browser_tabs, "create_integrator", lambda: FakeUIIntegrator())
+
+
+def _error_text(result) -> str:
+    return " ".join(getattr(item, "text", "") for item in (result.content or []))
 
 
 @pytest.mark.anyio
-async def test_list_sessions_empty():
+async def test_list_tabs_empty():
     server = _create_server_with_fake_ui()
 
     async def run_client(session: ClientSession) -> None:
-        result = await session.call_tool("list_browser_sessions", {})
+        result = await session.call_tool("list_tabs", {})
         assert not result.isError
         structured = result.structuredContent
         assert structured is not None
-        assert structured["session_ids"] == []
+        assert structured["tab_ids"] == []
 
     await _run_with_session(server, run_client)
 
 
 @pytest.mark.anyio
-async def test_open_and_close_session():
+async def test_open_and_close_tab():
     server = _create_server_with_fake_ui()
 
     async def run_client(session: ClientSession) -> None:
-        opened = await session.call_tool("open_browser_session", {})
+        opened = await session.call_tool("open_tab", {"url": "https://example.com"})
         assert not opened.isError
-        session_id = opened.structuredContent["session_id"]
+        tab_id = opened.structuredContent["tab_id"]
+        assert tab_id.isdigit()
+        assert 1 <= len(tab_id) <= 6
+        assert opened.structuredContent["url"] == "https://example.com"
 
-        listed = await session.call_tool("list_browser_sessions", {})
-        assert session_id in listed.structuredContent["session_ids"]
+        listed = await session.call_tool("list_tabs", {})
+        assert tab_id in listed.structuredContent["tab_ids"]
 
-        closed = await session.call_tool("close_browser_session", {"session_id": session_id})
+        closed = await session.call_tool("close_tab", {"tab_id": tab_id})
         assert closed.structuredContent["closed"] is True
+        assert closed.structuredContent["tab_id"] == tab_id
+
+        listed_after = await session.call_tool("list_tabs", {})
+        assert listed_after.structuredContent["tab_ids"] == []
 
     await _run_with_session(server, run_client)
 
 
 @pytest.mark.anyio
-async def test_read_webpage_ephemeral():
+async def test_close_tab_requires_tab_id():
     server = _create_server_with_fake_ui()
 
     async def run_client(session: ClientSession) -> None:
-        result = await session.call_tool("read_webpage", {"url": "https://example.com", "cleaning_mode": "text"})
+        result = await session.call_tool("close_tab", {})
+        assert result.isError
+        assert "tab_id" in _error_text(result)
+
+    await _run_with_session(server, run_client)
+
+
+@pytest.mark.anyio
+async def test_navigate_to_requires_tab_id():
+    server = _create_server_with_fake_ui()
+
+    async def run_client(session: ClientSession) -> None:
+        result = await session.call_tool("navigate_to", {"url": "https://example.com"})
+        assert result.isError
+        assert "tab_id" in _error_text(result)
+
+    await _run_with_session(server, run_client)
+
+
+@pytest.mark.anyio
+async def test_read_page_requires_tab_id():
+    server = _create_server_with_fake_ui()
+
+    async def run_client(session: ClientSession) -> None:
+        result = await session.call_tool("read_page", {"cleaning_mode": "text"})
+        assert result.isError
+        assert "tab_id" in _error_text(result)
+
+    await _run_with_session(server, run_client)
+
+
+@pytest.mark.anyio
+async def test_read_page_with_explicit_tab_id():
+    server = _create_server_with_fake_ui()
+
+    async def run_client(session: ClientSession) -> None:
+        opened = await session.call_tool("open_tab", {"url": "https://example.com"})
+        tab_id = opened.structuredContent["tab_id"]
+
+        result = await session.call_tool("read_page", {"tab_id": tab_id, "cleaning_mode": "text"})
         assert not result.isError
         structured = result.structuredContent
         assert structured["url"] == "https://example.com"
         assert "Test" in structured["content"]
+        assert structured["tab_id"] == tab_id
 
     await _run_with_session(server, run_client)
 
 
 @pytest.mark.anyio
-async def test_read_webpage_with_session():
-    server = _create_server_with_fake_ui()
-
-    async def run_client(session: ClientSession) -> None:
-        opened = await session.call_tool("open_browser_session", {})
-        session_id = opened.structuredContent["session_id"]
-
-        nav = await session.call_tool("navigate_to", {"session_id": session_id, "url": "https://example.com"})
-        assert nav.structuredContent["ok"] is True
-
-        result = await session.call_tool("read_webpage", {"session_id": session_id, "cleaning_mode": "text"})
-        assert not result.isError
-        assert result.structuredContent["url"] == "https://example.com"
-
-    await _run_with_session(server, run_client)
-
-
-@pytest.mark.anyio
-async def test_take_screenshot(tmp_path):
+async def test_screenshot_with_explicit_tab_id(tmp_path):
     server = _create_server_with_fake_ui()
     output_path = tmp_path / "shot.png"
 
     async def run_client(session: ClientSession) -> None:
+        opened = await session.call_tool("open_tab", {"url": "https://example.com"})
+        tab_id = opened.structuredContent["tab_id"]
+
         result = await session.call_tool(
-            "take_webpage_screenshot",
-            {"url": "https://example.com", "file_path": str(output_path)},
+            "screenshot",
+            {"tab_id": tab_id, "file_path": str(output_path)},
         )
         assert not result.isError
         assert Path(result.structuredContent["file_path"]).is_file()
+        assert result.structuredContent["tab_id"] == tab_id
 
     await _run_with_session(server, run_client)
 
 
 @pytest.mark.anyio
-async def test_trigger_web_element_type_requires_text():
+async def test_dom_snapshot():
     server = _create_server_with_fake_ui()
 
     async def run_client(session: ClientSession) -> None:
+        opened = await session.call_tool("open_tab", {"url": "https://example.com"})
+        tab_id = opened.structuredContent["tab_id"]
+
         result = await session.call_tool(
-            "trigger_web_element",
-            {"url": "https://example.com", "css_selector": "#name", "action": "type"},
+            "dom_snapshot",
+            {"tab_id": tab_id, "include_bounding_boxes": True, "max_elements": 50},
         )
-        assert result.isError
+        assert not result.isError
+        structured = result.structuredContent
+        assert structured is not None
+        assert structured["url"] == "https://example.com"
+        assert structured["total_candidates"] == 3
+        assert structured["returned_elements"] == 2
+        assert len(structured["elements"]) == 2
+        assert structured["elements"][0]["element_id"] == "e1"
+        assert structured["elements"][0]["css_selector"] == "#submit"
+        assert structured["tab_id"] == tab_id
 
     await _run_with_session(server, run_client)
 
 
 @pytest.mark.anyio
-async def test_execute_script_ephemeral():
+async def test_run_script_with_explicit_tab_id():
     server = _create_server_with_fake_ui()
 
     async def run_client(session: ClientSession) -> None:
+        opened = await session.call_tool("open_tab", {"url": "https://example.com"})
+        tab_id = opened.structuredContent["tab_id"]
+
         result = await session.call_tool(
-            "execute_script",
+            "run_script",
             {
-                "url": "https://example.com",
+                "tab_id": tab_id,
                 "script": "return 1 + 1;",
                 "arg": {"x": 1},
             },
@@ -230,5 +318,24 @@ async def test_execute_script_ephemeral():
         structured = result.structuredContent
         assert "return 1 + 1;" in structured["result"]["script"]
         assert structured["result"]["arg"] == {"x": 1}
+        assert structured["tab_id"] == tab_id
+
+    await _run_with_session(server, run_client)
+
+
+@pytest.mark.anyio
+async def test_run_script_requires_tab_id():
+    server = _create_server_with_fake_ui()
+
+    async def run_client(session: ClientSession) -> None:
+        result = await session.call_tool(
+            "run_script",
+            {
+                "script": "return 1 + 1;",
+                "arg": {"x": 1},
+            },
+        )
+        assert result.isError
+        assert "tab_id" in _error_text(result)
 
     await _run_with_session(server, run_client)

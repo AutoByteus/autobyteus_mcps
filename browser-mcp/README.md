@@ -1,16 +1,16 @@
 # Browser MCP Server
 
-A Python MCP server that exposes browser automation tools backed by `brui_core` (Playwright). It supports both ephemeral calls (one-off actions) and stateful sessions for multi-step navigation.
+A Python MCP server that exposes browser automation tools backed by `brui_core` (Playwright). It uses strict tab-scoped APIs for deterministic multi-step automation.
 
 ## Features
-- `open_browser_session`: create a persistent browser session.
-- `close_browser_session`: close a session by ID.
-- `list_browser_sessions`: inspect active sessions.
-- `navigate_to`: navigate to a URL (session or ephemeral).
-- `read_webpage`: read HTML and return cleaned content.
-- `take_webpage_screenshot`: capture a screenshot to disk.
-- `trigger_web_element`: click/type/select/check/etc. on a CSS selector.
-- `execute_script`: run JavaScript in the page and return the result.
+- `open_tab`: create a persistent tab (optional initial URL).
+- `close_tab`: close a tab by explicit `tab_id`.
+- `list_tabs`: inspect persistent tab IDs.
+- `navigate_to`: navigate an existing tab to a URL (`tab_id` required).
+- `read_page`: read HTML from an existing tab (`tab_id` required).
+- `screenshot`: capture a screenshot from an existing tab (`tab_id` required).
+- `dom_snapshot`: return structured DOM elements from an existing tab (`tab_id` required).
+- `run_script`: run JavaScript in an existing tab and return the result (`tab_id` required).
 
 ## Installation
 ```bash
@@ -36,37 +36,45 @@ Environment variables:
 
 ## Usage examples
 
-Create a session:
+Open a tab:
 ```json
-{ "tool": "open_browser_session", "input": {} }
+{ "tool": "open_tab", "input": { "url": "https://example.com" } }
 ```
 
-Navigate with a session:
+Navigate an existing tab:
 ```json
-{ "tool": "navigate_to", "input": { "session_id": "<id>", "url": "https://example.com" } }
+{ "tool": "navigate_to", "input": { "tab_id": "<TAB_ID>", "url": "https://example.com" } }
 ```
 
-Read a page (ephemeral):
+Read a page:
 ```json
-{ "tool": "read_webpage", "input": { "url": "https://example.com", "cleaning_mode": "thorough" } }
+{ "tool": "read_page", "input": { "tab_id": "<TAB_ID>", "cleaning_mode": "thorough" } }
 ```
 
 Take a screenshot:
 ```json
-{ "tool": "take_webpage_screenshot", "input": { "url": "https://example.com", "file_path": "./shots/example.png" } }
+{ "tool": "screenshot", "input": { "tab_id": "<TAB_ID>", "file_path": "./shots/example.png" } }
 ```
 
-Trigger a click:
+Take a DOM snapshot (elements + selectors):
 ```json
-{ "tool": "trigger_web_element", "input": { "session_id": "<id>", "css_selector": "#submit", "action": "click" } }
+{
+  "tool": "dom_snapshot",
+  "input": { "tab_id": "<TAB_ID>", "include_bounding_boxes": true, "max_elements": 200 }
+}
 ```
 
 Execute a script (expression or statements):
 ```json
 {
-  "tool": "execute_script",
-  "input": { "session_id": "<id>", "script": "return document.title;" }
+  "tool": "run_script",
+  "input": { "tab_id": "<TAB_ID>", "script": "return document.title;" }
 }
+```
+
+Close tab:
+```json
+{ "tool": "close_tab", "input": { "tab_id": "<TAB_ID>" } }
 ```
 
 ## Cursor MCP configuration example
@@ -92,6 +100,7 @@ Execute a script (expression or statements):
 ## Notes
 - The server relies on `brui_core` and Playwright. Ensure Chrome is available and can be launched in remote debugging mode as required by `brui_core`.
 - On Chrome/Chromium 136+ you must set `CHROME_USER_DATA_DIR` to a non-default path for remote debugging to work.
+- `tab_id` values are numeric strings with a maximum of 6 digits for readability.
 
 ## Running tests
 ```bash
