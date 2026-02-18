@@ -61,6 +61,44 @@ def test_bootstrap_installs_llama_on_linux_when_missing(monkeypatch) -> None:
     assert notes
 
 
+def test_bootstrap_installs_kokoro_on_linux_when_selected(monkeypatch) -> None:
+    settings = load_settings({"TTS_MCP_LINUX_RUNTIME": "kokoro_onnx"})
+    monkeypatch.setattr(runtime_bootstrap, "detect_host", lambda: _linux_host())
+    monkeypatch.setattr(runtime_bootstrap, "_python_module_available", lambda *_: False)
+    monkeypatch.setattr(runtime_bootstrap, "_kokoro_assets_available", lambda **_: False)
+
+    scripts_called: list[str] = []
+    monkeypatch.setattr(
+        runtime_bootstrap,
+        "_run_install_script",
+        lambda path: scripts_called.append(path.name),
+    )
+
+    notes = runtime_bootstrap.bootstrap_runtime(settings)
+
+    assert "install_kokoro_onnx_linux.sh" in scripts_called
+    assert notes
+
+
+def test_bootstrap_skips_kokoro_install_when_ready(monkeypatch) -> None:
+    settings = load_settings({"TTS_MCP_LINUX_RUNTIME": "kokoro_onnx"})
+    monkeypatch.setattr(runtime_bootstrap, "detect_host", lambda: _linux_host())
+    monkeypatch.setattr(runtime_bootstrap, "_python_module_available", lambda *_: True)
+    monkeypatch.setattr(runtime_bootstrap, "_kokoro_assets_available", lambda **_: True)
+
+    scripts_called: list[str] = []
+    monkeypatch.setattr(
+        runtime_bootstrap,
+        "_run_install_script",
+        lambda path: scripts_called.append(path.name),
+    )
+
+    notes = runtime_bootstrap.bootstrap_runtime(settings)
+
+    assert scripts_called == []
+    assert notes == []
+
+
 def test_bootstrap_disabled_noop(monkeypatch) -> None:
     settings = load_settings({"TTS_MCP_AUTO_INSTALL_RUNTIME": "false"})
     monkeypatch.setattr(runtime_bootstrap, "detect_host", lambda: _mac_host())

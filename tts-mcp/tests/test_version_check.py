@@ -45,3 +45,17 @@ def test_check_backend_runtime_version_llama_outdated(monkeypatch) -> None:
 
     assert result["status"] == "outdated"
     assert "b6200" in result["message"]
+
+
+def test_check_backend_runtime_version_kokoro_latest(monkeypatch) -> None:
+    version_check.check_backend_runtime_version.cache_clear()
+    monkeypatch.setattr(version_check, "_detect_installed_package_version", lambda *_: "0.5.0")
+    monkeypatch.setattr(version_check, "_fetch_latest_pypi_version", lambda *_, **__: "0.5.0")
+
+    result = version_check.check_backend_runtime_version(
+        backend="kokoro_onnx",
+        command="kokoro_onnx",
+        timeout_seconds=5,
+    )
+
+    assert result["status"] == "latest"

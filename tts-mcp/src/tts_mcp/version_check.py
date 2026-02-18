@@ -32,6 +32,8 @@ def check_backend_runtime_version(
         return _check_mlx_audio_runtime(command=command, timeout_seconds=timeout_seconds)
     if backend == "llama_cpp":
         return _check_llama_cpp_runtime(command=command, timeout_seconds=timeout_seconds)
+    if backend == "kokoro_onnx":
+        return _check_kokoro_runtime(timeout_seconds=timeout_seconds)
 
     return RuntimeVersionResult(
         status="unknown",
@@ -140,6 +142,46 @@ def _check_llama_cpp_runtime(command: str, timeout_seconds: int) -> RuntimeVersi
     )
 
 
+def _check_kokoro_runtime(timeout_seconds: int) -> RuntimeVersionResult:
+    local_version = _detect_installed_package_version("kokoro-onnx")
+    latest_version = _fetch_latest_pypi_version("kokoro-onnx", timeout_seconds=timeout_seconds)
+
+    if not local_version:
+        return RuntimeVersionResult(
+            status="unknown",
+            local_version=None,
+            latest_version=latest_version,
+            message=(
+                "Could not detect local kokoro-onnx version. "
+                "Install or upgrade with: pip install --upgrade kokoro-onnx"
+            ),
+        )
+    if not latest_version:
+        return RuntimeVersionResult(
+            status="unknown",
+            local_version=local_version,
+            latest_version=None,
+            message="Could not fetch latest kokoro-onnx version from PyPI.",
+        )
+    if local_version == latest_version:
+        return RuntimeVersionResult(
+            status="latest",
+            local_version=local_version,
+            latest_version=latest_version,
+            message=f"kokoro-onnx is up to date ({local_version}).",
+        )
+
+    return RuntimeVersionResult(
+        status="outdated",
+        local_version=local_version,
+        latest_version=latest_version,
+        message=(
+            f"kokoro-onnx is outdated: local={local_version}, latest={latest_version}. "
+            "Upgrade with: pip install --upgrade kokoro-onnx"
+        ),
+    )
+
+
 def _detect_mlx_audio_local_version(command: str, timeout_seconds: int) -> str | None:
     command_path = shutil.which(command)
     if command_path is None:
@@ -161,6 +203,23 @@ def _detect_mlx_audio_local_version(command: str, timeout_seconds: int) -> str |
 
     version = completed.stdout.strip()
     return version or None
+
+
+def _detect_installed_package_version(package_name: str) -> str | None:
+    try:
+        import importlib.metadata as metadata
+    except Exception:
+        return None
+
+    try:
+        version = metadata.version(package_name)
+    except metadata.PackageNotFoundError:
+        return None
+    except Exception:
+        return None
+
+    cleaned = version.strip()
+    return cleaned if cleaned else None
 
 
 def _resolve_python_from_script(path: Path) -> list[str] | None:

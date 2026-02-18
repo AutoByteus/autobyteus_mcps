@@ -9,6 +9,7 @@ def test_load_settings_defaults() -> None:
     settings = load_settings({})
 
     assert settings.default_backend == "auto"
+    assert settings.linux_runtime == "llama_cpp"
     assert settings.timeout_seconds == 180
     assert settings.delete_auto_output is True
     assert settings.enforce_latest_runtime is True
@@ -19,11 +20,20 @@ def test_load_settings_defaults() -> None:
     assert settings.mlx_model_preset == "kokoro_fast"
     assert settings.mlx_model in SUPPORTED_MLX_MODEL_IDS
     assert settings.llama_command == "llama-tts"
+    assert settings.kokoro_model_path.endswith("kokoro-v1.0.int8.onnx")
+    assert settings.kokoro_voices_path.endswith("voices-v1.0.bin")
+    assert settings.kokoro_default_voice == "af_heart"
+    assert settings.kokoro_default_language_code == "en-us"
 
 
 def test_load_settings_rejects_invalid_backend() -> None:
     with pytest.raises(ConfigError, match="TTS_MCP_BACKEND"):
         load_settings({"TTS_MCP_BACKEND": "bad"})
+
+
+def test_load_settings_rejects_invalid_linux_runtime() -> None:
+    with pytest.raises(ConfigError, match="TTS_MCP_LINUX_RUNTIME"):
+        load_settings({"TTS_MCP_LINUX_RUNTIME": "bad"})
 
 
 def test_load_settings_rejects_invalid_preset() -> None:

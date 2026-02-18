@@ -3,7 +3,7 @@
 Python MCP server exposing one tool, `speak`, with backend auto-detection:
 
 - Apple Silicon macOS -> `mlx_audio.tts.generate`
-- Linux + NVIDIA -> `llama-tts` (llama.cpp)
+- Linux runtime policy -> `llama-tts` (llama.cpp) or `kokoro_onnx` (CPU ONNX)
 
 If the host is unsupported or required commands are missing, the tool returns `ok=false`.
 
@@ -19,12 +19,13 @@ Runtime freshness is checked automatically before speak generation.
     - `play` (optional, default `true`)
     - `voice` (optional; MLX backend)
     - `speed` (optional, default `1.0`)
-    - `language_code` (optional; MLX backend)
-    - `backend` (optional override: `auto`, `mlx_audio`, `llama_cpp`)
+    - `language_code` (optional; MLX/Kokoro backend)
+    - `backend` (optional override: `auto`, `mlx_audio`, `llama_cpp`, `kokoro_onnx`)
     - `instruct` (optional; MLX style/voice-design prompt)
   - Output:
     - Success: `{"ok": true}`
     - Failure: `{"ok": false, "reason": "<short failure reason>"}`
+    - When `play=true`, success requires confirmed playback; if generation succeeds but playback fails, `speak` returns `ok=false`.
     - If selected runtime is not confirmed latest and `TTS_MCP_ENFORCE_LATEST=true`, `speak` returns `ok=false` with a reason.
 
 ## Supported MLX Models
@@ -43,7 +44,8 @@ Older `0.2.x` builds may fail on Qwen3-TTS models.
 ## Environment Variables
 
 General:
-- `TTS_MCP_BACKEND` (`auto` | `mlx_audio` | `llama_cpp`, default `auto`)
+- `TTS_MCP_BACKEND` (`auto` | `mlx_audio` | `llama_cpp` | `kokoro_onnx`, default `auto`)
+- `TTS_MCP_LINUX_RUNTIME` (`llama_cpp` | `kokoro_onnx`, default `llama_cpp`; used when `TTS_MCP_BACKEND=auto` on Linux)
 - `TTS_MCP_TIMEOUT_SECONDS` (default `180`)
 - `TTS_MCP_OUTPUT_DIR` (default `outputs`)
 - `TTS_MCP_DELETE_AUTO_OUTPUT` (`true` | `false`, default `true`; deletes auto-generated `speak_*.wav` files after successful playback/generation)
@@ -72,6 +74,13 @@ llama.cpp backend:
 - `LLAMA_TTS_VOCODER_PATH` (required when `LLAMA_TTS_MODEL_PATH` is set)
 - `LLAMA_TTS_N_GPU_LAYERS` (default `-1`)
 
+Kokoro ONNX backend:
+- `KOKORO_TTS_MODEL_PATH` (default `.tools/kokoro-current/kokoro-v1.0.int8.onnx`)
+- `KOKORO_TTS_VOICES_PATH` (default `.tools/kokoro-current/voices-v1.0.bin`)
+- `KOKORO_TTS_DEFAULT_VOICE` (default `af_heart`)
+- `KOKORO_TTS_DEFAULT_LANG_CODE` (default `en-us`)
+- `KOKORO_TTS_MODEL_VARIANT` (installer-only optional: `int8` | `fp16` | `fp16-gpu` | `full`, default `int8`)
+
 ## Install
 
 ```bash
@@ -80,13 +89,16 @@ pip install -e .[test]
 
 By default, runtime bootstrap is automatic on server startup (`TTS_MCP_AUTO_INSTALL_RUNTIME=true`):
 - macOS Apple Silicon: installs missing MLX runtime
-- Linux: installs missing llama-tts runtime
+- Linux: installs runtime selected by `TTS_MCP_LINUX_RUNTIME`
 
 Manual bootstrap scripts (optional):
 
 ```bash
 # Auto-detect host and install runtime now
 scripts/install_tts_runtime.sh
+
+# Linux runtime override for manual installer
+scripts/install_tts_runtime.sh --linux-runtime kokoro_onnx
 ```
 
 Platform-specific installers:
@@ -100,7 +112,22 @@ scripts/install_llama_tts_macos.sh
 
 # Linux: latest llama-tts runtime
 scripts/install_llama_tts_linux.sh
+
+# Linux: Kokoro ONNX runtime + model assets
+scripts/install_kokoro_onnx_linux.sh
 ```
+
+Linux installer note:
+- Requires `python3` (preferred) or `python` in `PATH`.
+- Optional override: set `PYTHON_BIN` to a specific Python executable.
+- `install_kokoro_onnx_linux.sh` installs `kokoro-onnx` in the current Python environment and downloads model assets.
+
+Linux playback routing note:
+- For PipeWire/PulseAudio desktops, prefer `TTS_MCP_LINUX_PLAYER=paplay` to follow the default desktop sink.
+- In MCP-hosted environments, set these env vars for reliable playback session routing:
+  - `XDG_RUNTIME_DIR=/run/user/<uid>`
+  - `PULSE_SERVER=unix:/run/user/<uid>/pulse/native`
+  - `DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/<uid>/bus`
 
 ## Run
 
@@ -164,6 +191,9 @@ This verifies end-to-end MCP tool invocation and confirms a real WAV is produced
 - `llama_cpp` backend:
   - Local version is read from `LLAMA_TTS_COMMAND --version`.
   - Latest version is fetched from GitHub releases (`ggml-org/llama.cpp`).
+- `kokoro_onnx` backend:
+  - Local version is read from installed Python package metadata (`kokoro-onnx`).
+  - Latest version is fetched from PyPI (`kokoro-onnx`).
 
 When `TTS_MCP_ENFORCE_LATEST=true`, `speak` is blocked unless runtime freshness is confirmed.
 

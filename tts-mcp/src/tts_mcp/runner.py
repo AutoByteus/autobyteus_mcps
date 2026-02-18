@@ -5,6 +5,7 @@ from functools import lru_cache
 from pathlib import Path
 import shutil
 import subprocess
+import wave
 from typing import TypedDict
 
 from .config import BackendName, ConfigError, TtsSettings, model_requires_instruct
@@ -143,6 +144,16 @@ def run_speak(
                 error_type="config",
                 error_message=str(exc),
             )
+    elif selection.backend == "kokoro_onnx":
+        if requested_instruct:
+            return _error_result(
+                backend=selection.backend,
+                platform_name=selection.host.system,
+                machine=selection.host.machine,
+                error_type="validation",
+                error_message="instruct is currently supported only for mlx_audio backend.",
+            )
+        command = ["kokoro_onnx.generate", str(resolved_output)]
     else:
         return _error_result(
             error_type="validation",
@@ -171,7 +182,17 @@ def run_speak(
 
     before_signature = _output_signature(resolved_output)
 
-    generation = _execute(command=command, timeout_seconds=settings.timeout_seconds)
+    if selection.backend == "kokoro_onnx":
+        generation = _run_kokoro_onnx(
+            settings=settings,
+            text=normalized_text,
+            output_path=resolved_output,
+            voice=voice,
+            speed=speed,
+            language_code=language_code,
+        )
+    else:
+        generation = _execute(command=command, timeout_seconds=settings.timeout_seconds)
     if generation["exit_code"] != 0:
         return _error_result(
             backend=selection.backend,
@@ -223,7 +244,7 @@ def run_speak(
             ),
         )
 
-    if play and selection.backend == "llama_cpp" and resolved_output.exists():
+    if play and selection.backend in {"llama_cpp", "kokoro_onnx"} and resolved_output.exists():
         playback_command = _build_linux_play_command(
             audio_path=resolved_output,
             linux_player=settings.linux_player,
@@ -235,7 +256,7 @@ def run_speak(
             )
         else:
             playback = _execute(command=playback_command, timeout_seconds=45)
-            if playback["exit_code"] == 0:
+            if _linux_playback_confirmed(playback_command, playback):
                 played = True
             else:
                 warnings.append(
@@ -356,6 +377,110 @@ def _build_llama_command(
     return command
 
 
+def _run_kokoro_onnx(
+    settings: TtsSettings,
+    text: str,
+    output_path: Path,
+    voice: str | None,
+    speed: float,
+    language_code: str | None,
+) -> _ExecutionResult:
+    try:
+        import numpy as np  # type: ignore
+    except Exception as exc:
+        return _ExecutionResult(
+            stdout=None,
+            stderr=None,
+            exit_code=None,
+            error_type="dependency",
+            error_message=f"numpy dependency is unavailable for kokoro_onnx backend: {exc}",
+        )
+
+    try:
+        kokoro = _load_kokoro_runtime(
+            model_path=_resolve_runtime_path(settings.kokoro_model_path),
+            voices_path=_resolve_runtime_path(settings.kokoro_voices_path),
+        )
+    except Exception as exc:
+        return _ExecutionResult(
+            stdout=None,
+            stderr=None,
+            exit_code=None,
+            error_type="dependency",
+            error_message=str(exc),
+        )
+
+    selected_voice = _normalize_optional_text(voice) or settings.kokoro_default_voice
+    selected_language = (
+        _normalize_optional_text(language_code) or settings.kokoro_default_language_code
+    )
+
+    try:
+        samples, sample_rate = kokoro.create(
+            text=text,
+            voice=selected_voice,
+            speed=speed,
+            lang=selected_language,
+        )
+        audio = np.asarray(samples, dtype=np.float32)
+        audio = np.clip(audio, -1.0, 1.0)
+        pcm16 = (audio * 32767.0).astype(np.int16)
+
+        with wave.open(str(output_path), "wb") as wav_file:
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(int(sample_rate))
+            wav_file.writeframes(pcm16.tobytes())
+    except Exception as exc:
+        return _ExecutionResult(
+            stdout=None,
+            stderr=None,
+            exit_code=1,
+            error_type="execution",
+            error_message=f"Kokoro generation failed: {exc}",
+        )
+
+    return _ExecutionResult(
+        stdout=f"kokoro_onnx generated voice={selected_voice} lang={selected_language}",
+        stderr=None,
+        exit_code=0,
+        error_type=None,
+        error_message=None,
+    )
+
+
+@lru_cache(maxsize=2)
+def _load_kokoro_runtime(model_path: Path, voices_path: Path):
+    if not model_path.exists():
+        raise RuntimeError(
+            f"Kokoro model file not found: {model_path}. "
+            "Run scripts/install_kokoro_onnx_linux.sh or set KOKORO_TTS_MODEL_PATH."
+        )
+    if not voices_path.exists():
+        raise RuntimeError(
+            f"Kokoro voices file not found: {voices_path}. "
+            "Run scripts/install_kokoro_onnx_linux.sh or set KOKORO_TTS_VOICES_PATH."
+        )
+
+    try:
+        from kokoro_onnx import Kokoro  # type: ignore
+    except Exception as exc:
+        raise RuntimeError(
+            "kokoro-onnx package is not installed. "
+            "Install with: pip install --upgrade kokoro-onnx"
+        ) from exc
+
+    return Kokoro(str(model_path), str(voices_path))
+
+
+def _resolve_runtime_path(value: str) -> Path:
+    path = Path(value).expanduser()
+    if path.is_absolute():
+        return path
+    root_dir = Path(__file__).resolve().parents[2]
+    return (root_dir / path).resolve(strict=False)
+
+
 def _resolve_output_path(candidate: str | None, default_output_dir: str) -> _ResolvedOutputPath:
     is_auto_generated = candidate is None
     if candidate is None:
@@ -457,6 +582,27 @@ def _execute(command: list[str], timeout_seconds: int) -> _ExecutionResult:
         error_type=None,
         error_message=None,
     )
+
+
+def _linux_playback_confirmed(
+    command: list[str],
+    playback: _ExecutionResult,
+) -> bool:
+    if playback["exit_code"] != 0:
+        return False
+
+    binary = Path(command[0]).name.lower()
+    if binary == "ffplay":
+        combined = f"{playback['stdout'] or ''}\n{playback['stderr'] or ''}".lower()
+        ffplay_failure_markers = (
+            "audio open failed",
+            "failed to open file",
+            "configure filtergraph",
+        )
+        if any(marker in combined for marker in ffplay_failure_markers):
+            return False
+
+    return True
 
 
 def _clean_output(value: str | None) -> str | None:

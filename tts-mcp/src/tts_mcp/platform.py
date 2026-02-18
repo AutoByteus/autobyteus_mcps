@@ -64,13 +64,23 @@ def select_backend(
     if requested == "auto":
         if actual_host.is_macos_arm64:
             backend = "mlx_audio"
-        elif actual_host.is_linux and actual_host.has_nvidia:
-            backend = "llama_cpp"
+        elif actual_host.is_linux:
+            if settings.linux_runtime == "kokoro_onnx":
+                backend = "kokoro_onnx"
+            elif actual_host.has_nvidia:
+                backend = "llama_cpp"
+            else:
+                raise BackendSelectionError(
+                    "unsupported_platform",
+                    "Auto backend selection for Linux with TTS_MCP_LINUX_RUNTIME=llama_cpp "
+                    "requires NVIDIA GPU availability. Set TTS_MCP_LINUX_RUNTIME=kokoro_onnx "
+                    "for CPU Kokoro runtime.",
+                )
         else:
             raise BackendSelectionError(
                 "unsupported_platform",
-                "Auto backend selection supports only Apple Silicon macOS (MLX Audio) "
-                "or Linux with NVIDIA GPU (llama.cpp TTS).",
+                "Auto backend selection supports Apple Silicon macOS (MLX Audio) and Linux "
+                "runtime policy (llama.cpp or Kokoro ONNX).",
             )
     else:
         backend = requested
@@ -89,10 +99,17 @@ def select_backend(
                 "llama_cpp backend requires Linux with NVIDIA GPU availability.",
             )
         command = settings.llama_command
+    elif backend == "kokoro_onnx":
+        if not actual_host.is_linux:
+            raise BackendSelectionError(
+                "unsupported_platform",
+                "kokoro_onnx backend currently supports Linux hosts only.",
+            )
+        command = "kokoro_onnx"
     else:
         raise BackendSelectionError("validation", f"Unsupported backend value: {backend}")
 
-    if resolve_command(command) is None:
+    if backend in {"mlx_audio", "llama_cpp"} and resolve_command(command) is None:
         raise BackendSelectionError(
             "dependency",
             f"Required command '{command}' is not available in PATH.",

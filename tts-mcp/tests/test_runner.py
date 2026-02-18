@@ -318,6 +318,85 @@ def test_run_speak_llama_playback_warning_when_no_player(monkeypatch, tmp_path: 
     assert result["warnings"]
 
 
+def test_run_speak_llama_treats_ffplay_stderr_failure_as_not_played(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    settings = load_settings({"TTS_MCP_OUTPUT_DIR": str(tmp_path)})
+    monkeypatch.setattr(
+        runner,
+        "select_backend",
+        lambda **_: BackendSelection(backend="llama_cpp", command=settings.llama_command, host=_linux_host()),
+    )
+
+    output_file = tmp_path / "llama_ffplay_false_positive.wav"
+    playback_command = ["ffplay", "-nodisp", "-autoexit", str(output_file)]
+    monkeypatch.setattr(runner, "_build_linux_play_command", lambda **_: playback_command)
+
+    def fake_run(command, **kwargs):
+        if command[0] == settings.llama_command:
+            output_file.write_bytes(_MIN_VALID_WAV_BYTES)
+            return subprocess.CompletedProcess(command, 0, "done", "")
+        if command[0] == "ffplay":
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                "",
+                "audio open failed\nFailed to open file",
+            )
+        raise AssertionError(f"Unexpected command: {command}")
+
+    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+
+    result = runner.run_speak(
+        settings=settings,
+        text="Hello from llama",
+        output_path=str(output_file),
+        play=True,
+    )
+
+    assert result["ok"] is True
+    assert result["played"] is False
+    assert result["warnings"]
+
+
+def test_run_speak_llama_accepts_ffplay_success_without_failure_markers(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    settings = load_settings({"TTS_MCP_OUTPUT_DIR": str(tmp_path)})
+    monkeypatch.setattr(
+        runner,
+        "select_backend",
+        lambda **_: BackendSelection(backend="llama_cpp", command=settings.llama_command, host=_linux_host()),
+    )
+
+    output_file = tmp_path / "llama_ffplay_ok.wav"
+    playback_command = ["ffplay", "-nodisp", "-autoexit", str(output_file)]
+    monkeypatch.setattr(runner, "_build_linux_play_command", lambda **_: playback_command)
+
+    def fake_run(command, **kwargs):
+        if command[0] == settings.llama_command:
+            output_file.write_bytes(_MIN_VALID_WAV_BYTES)
+            return subprocess.CompletedProcess(command, 0, "done", "")
+        if command[0] == "ffplay":
+            return subprocess.CompletedProcess(command, 0, "", "")
+        raise AssertionError(f"Unexpected command: {command}")
+
+    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+
+    result = runner.run_speak(
+        settings=settings,
+        text="Hello from llama",
+        output_path=str(output_file),
+        play=True,
+    )
+
+    assert result["ok"] is True
+    assert result["played"] is True
+    assert result["warnings"] == []
+
+
 def test_run_speak_rejects_instruct_on_llama(monkeypatch) -> None:
     settings = load_settings({})
     monkeypatch.setattr(
@@ -334,6 +413,70 @@ def test_run_speak_rejects_instruct_on_llama(monkeypatch) -> None:
 
     assert result["ok"] is False
     assert result["error_type"] == "validation"
+
+
+def test_run_speak_kokoro_success(monkeypatch, tmp_path: Path) -> None:
+    settings = load_settings({"TTS_MCP_OUTPUT_DIR": str(tmp_path)})
+    monkeypatch.setattr(
+        runner,
+        "select_backend",
+        lambda **_: BackendSelection(backend="kokoro_onnx", command="kokoro_onnx", host=_linux_host()),
+    )
+
+    output_file = tmp_path / "kokoro.wav"
+
+    def fake_kokoro(**kwargs):
+        output_file.write_bytes(_MIN_VALID_WAV_BYTES)
+        return {
+            "stdout": "kokoro generated",
+            "stderr": None,
+            "exit_code": 0,
+            "error_type": None,
+            "error_message": None,
+        }
+
+    monkeypatch.setattr(runner, "_run_kokoro_onnx", fake_kokoro)
+
+    result = runner.run_speak(
+        settings=settings,
+        text="Hello from Kokoro",
+        output_path=str(output_file),
+        play=False,
+    )
+
+    assert result["ok"] is True
+    assert result["backend"] == "kokoro_onnx"
+    assert output_file.exists()
+
+
+def test_run_speak_kokoro_missing_dependency(monkeypatch, tmp_path: Path) -> None:
+    settings = load_settings({"TTS_MCP_OUTPUT_DIR": str(tmp_path)})
+    monkeypatch.setattr(
+        runner,
+        "select_backend",
+        lambda **_: BackendSelection(backend="kokoro_onnx", command="kokoro_onnx", host=_linux_host()),
+    )
+    monkeypatch.setattr(
+        runner,
+        "_run_kokoro_onnx",
+        lambda **_: {
+            "stdout": None,
+            "stderr": None,
+            "exit_code": None,
+            "error_type": "dependency",
+            "error_message": "kokoro-onnx package is not installed.",
+        },
+    )
+
+    result = runner.run_speak(
+        settings=settings,
+        text="Hello",
+        output_path=str(tmp_path / "kokoro_dep.wav"),
+        play=False,
+    )
+
+    assert result["ok"] is False
+    assert result["error_type"] == "dependency"
 
 
 def test_run_speak_rejects_empty_text() -> None:

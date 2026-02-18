@@ -4,13 +4,15 @@ from dataclasses import dataclass
 import os
 from typing import Literal, Mapping
 
-BackendName = Literal["auto", "mlx_audio", "llama_cpp"]
+BackendName = Literal["auto", "mlx_audio", "llama_cpp", "kokoro_onnx"]
+LinuxRuntimeName = Literal["llama_cpp", "kokoro_onnx"]
 MlxModelPreset = Literal["kokoro_fast", "qwen_base_hq", "qwen_voicedesign_hq"]
 
 DEFAULT_SERVER_NAME = "tts-mcp"
 DEFAULT_INSTRUCTIONS = (
     "Expose one speak tool that converts text to speech. "
-    "Auto-route to MLX Audio on Apple Silicon or llama.cpp TTS on Linux with NVIDIA."
+    "Auto-route to MLX Audio on Apple Silicon, and on Linux route by runtime policy "
+    "(llama.cpp or Kokoro ONNX)."
 )
 
 MLX_MODEL_PRESETS: dict[MlxModelPreset, tuple[str, str, bool]] = {
@@ -57,6 +59,7 @@ class ServerConfig:
 @dataclass(frozen=True, slots=True)
 class TtsSettings:
     default_backend: BackendName
+    linux_runtime: LinuxRuntimeName
     timeout_seconds: int
     output_dir: str
     delete_auto_output: bool
@@ -78,6 +81,11 @@ class TtsSettings:
     llama_vocoder_path: str | None
     llama_n_gpu_layers: int
 
+    kokoro_model_path: str
+    kokoro_voices_path: str
+    kokoro_default_voice: str
+    kokoro_default_language_code: str
+
     linux_player: Literal["auto", "ffplay", "aplay", "paplay", "none"]
 
 
@@ -85,6 +93,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> TtsSettings:
     actual_env = env if env is not None else os.environ
 
     default_backend = _parse_backend(actual_env.get("TTS_MCP_BACKEND", "auto"))
+    linux_runtime = _parse_linux_runtime(actual_env.get("TTS_MCP_LINUX_RUNTIME", "llama_cpp"))
     timeout_seconds = _parse_positive_int(
         actual_env.get("TTS_MCP_TIMEOUT_SECONDS", "180"),
         "TTS_MCP_TIMEOUT_SECONDS",
@@ -159,10 +168,32 @@ def load_settings(env: Mapping[str, str] | None = None) -> TtsSettings:
             "and LLAMA_TTS_VOCODER_PATH."
         )
 
+    kokoro_model_path = _require_non_empty(
+        actual_env,
+        "KOKORO_TTS_MODEL_PATH",
+        default=".tools/kokoro-current/kokoro-v1.0.int8.onnx",
+    )
+    kokoro_voices_path = _require_non_empty(
+        actual_env,
+        "KOKORO_TTS_VOICES_PATH",
+        default=".tools/kokoro-current/voices-v1.0.bin",
+    )
+    kokoro_default_voice = _require_non_empty(
+        actual_env,
+        "KOKORO_TTS_DEFAULT_VOICE",
+        default="af_heart",
+    )
+    kokoro_default_language_code = _require_non_empty(
+        actual_env,
+        "KOKORO_TTS_DEFAULT_LANG_CODE",
+        default="en-us",
+    )
+
     linux_player = _parse_linux_player(actual_env.get("TTS_MCP_LINUX_PLAYER", "auto"))
 
     return TtsSettings(
         default_backend=default_backend,
+        linux_runtime=linux_runtime,
         timeout_seconds=timeout_seconds,
         output_dir=output_dir,
         delete_auto_output=delete_auto_output,
@@ -181,6 +212,10 @@ def load_settings(env: Mapping[str, str] | None = None) -> TtsSettings:
         llama_model_path=llama_model_path,
         llama_vocoder_path=llama_vocoder_path,
         llama_n_gpu_layers=llama_n_gpu_layers,
+        kokoro_model_path=kokoro_model_path,
+        kokoro_voices_path=kokoro_voices_path,
+        kokoro_default_voice=kokoro_default_voice,
+        kokoro_default_language_code=kokoro_default_language_code,
         linux_player=linux_player,
     )
 
@@ -203,10 +238,20 @@ def _parse_model_preset(raw: str) -> MlxModelPreset:
 
 def _parse_backend(raw: str) -> BackendName:
     value = raw.strip().lower()
-    allowed = {"auto", "mlx_audio", "llama_cpp"}
+    allowed = {"auto", "mlx_audio", "llama_cpp", "kokoro_onnx"}
     if value not in allowed:
         raise ConfigError(
-            "TTS_MCP_BACKEND must be one of: auto, mlx_audio, llama_cpp."
+            "TTS_MCP_BACKEND must be one of: auto, mlx_audio, llama_cpp, kokoro_onnx."
+        )
+    return value  # type: ignore[return-value]
+
+
+def _parse_linux_runtime(raw: str) -> LinuxRuntimeName:
+    value = raw.strip().lower()
+    allowed = {"llama_cpp", "kokoro_onnx"}
+    if value not in allowed:
+        raise ConfigError(
+            "TTS_MCP_LINUX_RUNTIME must be one of: llama_cpp, kokoro_onnx."
         )
     return value  # type: ignore[return-value]
 

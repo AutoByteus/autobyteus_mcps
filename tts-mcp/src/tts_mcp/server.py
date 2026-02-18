@@ -30,7 +30,7 @@ def create_server(
         title="Text to speech",
         description=(
             "Speak input text by auto-selecting MLX Audio on Apple Silicon macOS "
-            "or llama.cpp TTS on Linux with NVIDIA."
+            "or Linux runtime policy backend (llama.cpp or Kokoro ONNX)."
         ),
         structured_output=True,
     )
@@ -41,7 +41,7 @@ def create_server(
         voice: str | None = None,
         speed: float = 1.0,
         language_code: str | None = None,
-        backend: Literal["auto", "mlx_audio", "llama_cpp"] | None = None,
+        backend: Literal["auto", "mlx_audio", "llama_cpp", "kokoro_onnx"] | None = None,
         instruct: str | None = None,
         *,
         context: Context | None = None,
@@ -65,6 +65,12 @@ def create_server(
             await context.report_progress(1, 1, "Speech generation completed")
 
         if result["ok"]:
+            if play and not result["played"]:
+                warning = "; ".join(result["warnings"]).strip()
+                reason = "Speech generated but playback did not complete."
+                if warning:
+                    reason = f"{reason} {warning}"
+                return {"ok": False, "reason": reason}
             return {"ok": True}
         reason = (result.get("error_message") or "").strip() or "Speech generation failed."
         return {"ok": False, "reason": reason}
