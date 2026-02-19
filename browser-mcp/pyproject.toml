@@ -11,7 +11,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "mcp>=1.13.1",
-    "brui-core>=1.1.0",
+    "brui-core>=2.0.0",
     "beautifulsoup4>=4.12.0",
 ]
 

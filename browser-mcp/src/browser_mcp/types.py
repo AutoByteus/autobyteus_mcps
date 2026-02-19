@@ -5,40 +5,65 @@ class NavigateResult(TypedDict):
     url: str
     ok: bool
     status: int | None
-    session_id: str | None
+    tab_id: str
 
 
-class ReadWebpageResult(TypedDict):
+class ReadPageResult(TypedDict):
     url: str
     content: str
-    session_id: str | None
+    tab_id: str
 
 
 class ScreenshotResult(TypedDict):
     url: str
     file_path: str
-    session_id: str | None
+    tab_id: str
 
 
-class SessionResult(TypedDict):
-    session_id: str
+class BoundingBox(TypedDict):
+    x: float
+    y: float
+    width: float
+    height: float
 
 
-class CloseSessionResult(TypedDict):
-    session_id: str
+class DomSnapshotElement(TypedDict):
+    element_id: str
+    tag_name: str
+    dom_id: str | None
+    css_selector: str
+    role: str | None
+    name: str | None
+    text: str | None
+    href: str | None
+    value: str | None
+    bounding_box: BoundingBox | None
+
+
+class DomSnapshotResult(TypedDict):
+    url: str
+    tab_id: str
+    elements: list[DomSnapshotElement]
+    total_candidates: int
+    returned_elements: int
+    truncated: bool
+
+
+class OpenTabResult(TypedDict):
+    tab_id: str
+    url: str
+
+
+class CloseTabResult(TypedDict):
+    tab_id: str
     closed: bool
 
 
-class ListSessionsResult(TypedDict):
-    session_ids: list[str]
+class ListTabsResult(TypedDict):
+    tab_ids: list[str]
 
 
-class TriggerElementResult(TypedDict):
-    message: str
-    session_id: str | None
-
-
-class ExecuteScriptResult(TypedDict):
+class RunScriptResult(TypedDict):
     url: str
     result: object | None
-    session_id: str | None
+    tab_id: str

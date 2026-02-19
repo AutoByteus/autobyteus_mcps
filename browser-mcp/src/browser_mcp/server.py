@@ -4,13 +4,13 @@ from dataclasses import dataclass
 
 from mcp.server.fastmcp import FastMCP
 
-from browser_mcp.sessions import SessionManager
+from browser_mcp.tabs import TabManager
 from browser_mcp.tools import register_tools
 
 DEFAULT_SERVER_NAME = "browser-mcp"
 DEFAULT_INSTRUCTIONS = (
     "Expose browser automation tools backed by brui_core/Playwright. "
-    "Use session_id for multi-step workflows when you need stateful navigation."
+    "All stateful tools require explicit tab_id for deterministic multi-step workflows."
 )
 
 logger = logging.getLogger(__name__)
@@ -53,8 +53,8 @@ class ServerConfig:
 def create_server(config: ServerConfig | None = None) -> FastMCP:
     cfg = config or ServerConfig.from_env()
     server = FastMCP(name=cfg.name, instructions=cfg.instructions)
-    session_manager = SessionManager()
-    register_tools(server, session_manager)
+    tab_manager = TabManager()
+    register_tools(server, tab_manager)
     return server
 
 

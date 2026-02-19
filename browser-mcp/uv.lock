@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.11"
 
 [[package]]
@@ -67,7 +67,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "beautifulsoup4", specifier = ">=4.12.0" },
-    { name = "brui-core", specifier = ">=1.1.0" },
+    { name = "brui-core", specifier = ">=2.0.0" },
     { name = "mcp", specifier = ">=1.13.1" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8.0" },
     { name = "pytest-anyio", marker = "extra == 'test'", specifier = ">=0" },
@@ -78,16 +78,16 @@ provides-extras = ["test"]
 
 [[package]]
 name = "brui-core"
-version = "1.2.1"
+version = "2.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pillow" },
     { name = "playwright" },
     { name = "pyperclip" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/62/1a/636599153f0e6997bdc5b0fcc09d8a11ce85d040fd753fe00a043d7276d0/brui_core-1.2.1.tar.gz", hash = "sha256:4d038d289c7fd88e14c6d13f5d91e1a532c85c8078582d3b80a8a3c10b58d200", size = 12281, upload-time = "2026-01-31T06:51:37.783Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/bc/6e/7b8cd1b98e353ec351267cf8e77d969ccc59158a5ee3e8452d2733d027df/brui_core-2.0.0.tar.gz", hash = "sha256:b08632f79fe9ba443b6c0c307c97aea686630ab146f1f679284abc5d32d67121", size = 12893, upload-time = "2026-02-17T08:26:57.592Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c7/62/b76b6d36ecbb8566db0f5478223bbebd65fa36c76b80a3db1fe352cd52a0/brui_core-1.2.1-py3-none-any.whl", hash = "sha256:e29cc3fdd579e8fb6d80fc6ddd9066379f2c555de11b9992eb6cca3bd3bfee28", size = 12081, upload-time = "2026-01-31T06:51:35.942Z" },
+    { url = "https://files.pythonhosted.org/packages/d8/8d/1b76ba13fe5ef7eb1d4fa27271c6c9a7abf96dffac94ba163c0305aafa8a/brui_core-2.0.0-py3-none-any.whl", hash = "sha256:3cd68592ebe48203859e81d2a77615a3b80d66186573ee83ce61044ebf887073", size = 11783, upload-time = "2026-02-17T08:26:55.979Z" },
 ]
 
 [[package]]
