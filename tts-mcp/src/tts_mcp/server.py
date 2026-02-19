@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import sys
-from typing import Literal
 
 from mcp.server.fastmcp import Context, FastMCP
 
@@ -38,11 +37,6 @@ def create_server(
         text: str,
         output_path: str | None = None,
         play: bool = True,
-        voice: str | None = None,
-        speed: float = 1.0,
-        language_code: str | None = None,
-        backend: Literal["auto", "mlx_audio", "llama_cpp", "kokoro_onnx"] | None = None,
-        instruct: str | None = None,
         *,
         context: Context | None = None,
     ) -> dict[str, object]:
@@ -54,11 +48,7 @@ def create_server(
             text=text,
             output_path=output_path,
             play=play,
-            voice=voice,
-            speed=speed,
-            language_code=language_code,
-            preferred_backend=backend,
-            instruct=instruct,
+            speed=resolved_settings.default_speed,
         )
 
         if context is not None:

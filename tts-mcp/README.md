@@ -17,11 +17,7 @@ Runtime freshness is checked automatically before speak generation.
     - `text` (required)
     - `output_path` (optional, `.wav`; set this if you want to keep the generated file)
     - `play` (optional, default `true`)
-    - `voice` (optional; MLX backend)
-    - `speed` (optional, default `1.0`)
-    - `language_code` (optional; MLX/Kokoro backend)
-    - `backend` (optional override: `auto`, `mlx_audio`, `llama_cpp`, `kokoro_onnx`)
-    - `instruct` (optional; MLX style/voice-design prompt)
+  - Runtime behavior and voice/language/backend/model settings come from MCP environment variables.
   - Output:
     - Success: `{"ok": true}`
     - Failure: `{"ok": false, "reason": "<short failure reason>"}`
@@ -59,6 +55,7 @@ General:
   - `auto`: if MLX model cache already exists, run MLX command with `HF_HUB_OFFLINE=1` to avoid blocking Hub metadata calls
   - `true`: always force offline Hub mode for MLX command
   - `false`: always allow Hub network calls
+- `TTS_MCP_DEFAULT_SPEED` (default `1.0`; tool-level default speed used for generation)
 - `TTS_MCP_NAME` (default `tts-mcp`)
 - `TTS_MCP_INSTRUCTIONS` (optional)
 

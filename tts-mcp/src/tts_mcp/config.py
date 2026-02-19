@@ -70,6 +70,7 @@ class TtsSettings:
     auto_install_runtime: bool
     auto_install_llama_on_macos: bool
     hf_hub_offline_mode: HfHubOfflineMode
+    default_speed: float
 
     mlx_command: str
     mlx_model_preset: MlxModelPreset
@@ -128,6 +129,10 @@ def load_settings(env: Mapping[str, str] | None = None) -> TtsSettings:
     )
     hf_hub_offline_mode = _parse_hf_hub_offline_mode(
         actual_env.get("TTS_MCP_HF_HUB_OFFLINE_MODE", "auto")
+    )
+    default_speed = _parse_positive_float(
+        actual_env.get("TTS_MCP_DEFAULT_SPEED", "1.0"),
+        "TTS_MCP_DEFAULT_SPEED",
     )
 
     mlx_command = _require_non_empty(actual_env, "MLX_TTS_COMMAND", default="mlx_audio.tts.generate")
@@ -213,6 +218,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> TtsSettings:
         auto_install_runtime=auto_install_runtime,
         auto_install_llama_on_macos=auto_install_llama_on_macos,
         hf_hub_offline_mode=hf_hub_offline_mode,
+        default_speed=default_speed,
         mlx_command=mlx_command,
         mlx_model_preset=mlx_model_preset,
         mlx_model=mlx_model,
@@ -290,6 +296,16 @@ def _parse_hf_hub_offline_mode(raw: str) -> HfHubOfflineMode:
 
 def _parse_positive_int(raw: str, field_name: str) -> int:
     value = _parse_int(raw, field_name)
+    if value <= 0:
+        raise ConfigError(f"{field_name} must be greater than zero.")
+    return value
+
+
+def _parse_positive_float(raw: str, field_name: str) -> float:
+    try:
+        value = float(raw)
+    except ValueError as exc:
+        raise ConfigError(f"{field_name} must be a number.") from exc
     if value <= 0:
         raise ConfigError(f"{field_name} must be greater than zero.")
     return value

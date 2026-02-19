@@ -35,6 +35,23 @@ async def _run_with_session(server, client_callable):
 
 
 @pytest.mark.anyio
+async def test_speak_tool_schema_is_minimal() -> None:
+    server = server_module.create_server(
+        settings=load_settings({"TTS_MCP_AUTO_INSTALL_RUNTIME": "false"}),
+        server_config=ServerConfig(name="tts-test"),
+    )
+
+    async def run_client(session: ClientSession) -> None:
+        tools = await session.list_tools()
+        speak_tool = next(tool for tool in tools.tools if tool.name == "speak")
+        properties = set((speak_tool.inputSchema.get("properties") or {}).keys())
+        assert properties == {"text", "output_path", "play"}
+        assert speak_tool.inputSchema.get("required") == ["text"]
+
+    await _run_with_session(server, run_client)
+
+
+@pytest.mark.anyio
 async def test_speak_tool_delegates_runner(monkeypatch):
     runner_result = {
         "ok": True,
@@ -72,6 +89,11 @@ async def test_speak_tool_delegates_runner(monkeypatch):
         assert not result.isError
         assert result.structuredContent == expected
         assert captured["play"] is True
+        assert captured["speed"] == 1.0
+        assert "voice" not in captured
+        assert "language_code" not in captured
+        assert "preferred_backend" not in captured
+        assert "instruct" not in captured
 
     await _run_with_session(server, run_client)
 

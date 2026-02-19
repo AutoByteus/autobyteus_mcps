@@ -18,6 +18,7 @@ def test_load_settings_defaults() -> None:
     assert settings.auto_install_runtime is True
     assert settings.auto_install_llama_on_macos is False
     assert settings.hf_hub_offline_mode == "auto"
+    assert settings.default_speed == 1.0
     assert settings.mlx_command == "mlx_audio.tts.generate"
     assert settings.mlx_model_preset == "kokoro_fast"
     assert settings.mlx_model in SUPPORTED_MLX_MODEL_IDS
@@ -61,6 +62,11 @@ def test_load_settings_rejects_invalid_hf_hub_offline_mode() -> None:
 def test_load_settings_rejects_invalid_process_lock_timeout() -> None:
     with pytest.raises(ConfigError, match="TTS_MCP_PROCESS_LOCK_TIMEOUT_SECONDS"):
         load_settings({"TTS_MCP_PROCESS_LOCK_TIMEOUT_SECONDS": "0"})
+
+
+def test_load_settings_rejects_invalid_default_speed() -> None:
+    with pytest.raises(ConfigError, match="TTS_MCP_DEFAULT_SPEED"):
+        load_settings({"TTS_MCP_DEFAULT_SPEED": "0"})
 
 
 def test_model_requires_instruct_for_voicedesign() -> None:
