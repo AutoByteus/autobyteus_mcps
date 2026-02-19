@@ -54,7 +54,13 @@ async def test_speak_tool_delegates_runner(monkeypatch):
     }
     expected = {"ok": True}
 
-    monkeypatch.setattr(server_module, "run_speak", lambda **_: runner_result)
+    captured: dict[str, object] = {}
+
+    def fake_run_speak(**kwargs):
+        captured.update(kwargs)
+        return runner_result
+
+    monkeypatch.setattr(server_module, "run_speak", fake_run_speak)
 
     server = server_module.create_server(
         settings=load_settings({"TTS_MCP_AUTO_INSTALL_RUNTIME": "false"}),
@@ -65,6 +71,7 @@ async def test_speak_tool_delegates_runner(monkeypatch):
         result = await session.call_tool("speak", {"text": "hello"})
         assert not result.isError
         assert result.structuredContent == expected
+        assert captured["play"] is True
 
     await _run_with_session(server, run_client)
 

@@ -11,11 +11,13 @@ def test_load_settings_defaults() -> None:
     assert settings.default_backend == "auto"
     assert settings.linux_runtime == "llama_cpp"
     assert settings.timeout_seconds == 180
+    assert settings.process_lock_timeout_seconds == 30
     assert settings.delete_auto_output is True
     assert settings.enforce_latest_runtime is True
     assert settings.version_check_timeout_seconds == 6
     assert settings.auto_install_runtime is True
     assert settings.auto_install_llama_on_macos is False
+    assert settings.hf_hub_offline_mode == "auto"
     assert settings.mlx_command == "mlx_audio.tts.generate"
     assert settings.mlx_model_preset == "kokoro_fast"
     assert settings.mlx_model in SUPPORTED_MLX_MODEL_IDS
@@ -49,6 +51,16 @@ def test_load_settings_rejects_unsupported_mlx_model() -> None:
 def test_load_settings_requires_vocoder_when_model_is_set() -> None:
     with pytest.raises(ConfigError, match="LLAMA_TTS_VOCODER_PATH"):
         load_settings({"LLAMA_TTS_MODEL_PATH": "/tmp/model.gguf"})
+
+
+def test_load_settings_rejects_invalid_hf_hub_offline_mode() -> None:
+    with pytest.raises(ConfigError, match="TTS_MCP_HF_HUB_OFFLINE_MODE"):
+        load_settings({"TTS_MCP_HF_HUB_OFFLINE_MODE": "maybe"})
+
+
+def test_load_settings_rejects_invalid_process_lock_timeout() -> None:
+    with pytest.raises(ConfigError, match="TTS_MCP_PROCESS_LOCK_TIMEOUT_SECONDS"):
+        load_settings({"TTS_MCP_PROCESS_LOCK_TIMEOUT_SECONDS": "0"})
 
 
 def test_model_requires_instruct_for_voicedesign() -> None:

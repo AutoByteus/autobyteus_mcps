@@ -81,6 +81,27 @@ def test_run_speak_mlx_success(monkeypatch, tmp_path: Path) -> None:
     assert result["warnings"] == []
 
 
+def test_run_speak_returns_busy_when_global_lock_not_available(monkeypatch, tmp_path: Path) -> None:
+    settings = load_settings({"TTS_MCP_OUTPUT_DIR": str(tmp_path)})
+
+    monkeypatch.setattr(
+        runner,
+        "select_backend",
+        lambda **_: BackendSelection(backend="mlx_audio", command=settings.mlx_command, host=_mlx_host()),
+    )
+    monkeypatch.setattr(runner, "_acquire_global_generation_lock", lambda **_: None)
+
+    result = runner.run_speak(
+        settings=settings,
+        text="Hello from MLX",
+        output_path=str(tmp_path / "busy.wav"),
+        play=False,
+    )
+
+    assert result["ok"] is False
+    assert result["error_type"] == "busy"
+
+
 def test_run_speak_deletes_auto_output_by_default(monkeypatch, tmp_path: Path) -> None:
     settings = load_settings({"TTS_MCP_OUTPUT_DIR": str(tmp_path)})
 
@@ -167,6 +188,44 @@ def test_run_speak_keeps_auto_output_when_cleanup_disabled(monkeypatch, tmp_path
     assert result["ok"] is True
     assert result["output_path"] is not None
     assert Path(result["output_path"]).exists()
+
+
+def test_resolve_mlx_subprocess_env_forced_offline_true() -> None:
+    settings = load_settings({"TTS_MCP_HF_HUB_OFFLINE_MODE": "true"})
+    assert runner._resolve_mlx_subprocess_env(settings) == {"HF_HUB_OFFLINE": "1"}
+
+
+def test_resolve_mlx_subprocess_env_forced_offline_false() -> None:
+    settings = load_settings({"TTS_MCP_HF_HUB_OFFLINE_MODE": "false"})
+    assert runner._resolve_mlx_subprocess_env(settings) is None
+
+
+def test_resolve_mlx_subprocess_env_auto_uses_cache(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    cache_dir = (
+        tmp_path
+        / ".cache"
+        / "huggingface"
+        / "hub"
+        / "models--mlx-community--Kokoro-82M-bf16"
+        / "snapshots"
+        / "1234"
+    )
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    runner._is_hf_model_cached.cache_clear()
+
+    settings = load_settings({"TTS_MCP_HF_HUB_OFFLINE_MODE": "auto"})
+    assert runner._resolve_mlx_subprocess_env(settings) == {"HF_HUB_OFFLINE": "1"}
+    runner._is_hf_model_cached.cache_clear()
+
+
+def test_resolve_mlx_subprocess_env_auto_without_cache(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    runner._is_hf_model_cached.cache_clear()
+
+    settings = load_settings({"TTS_MCP_HF_HUB_OFFLINE_MODE": "auto"})
+    assert runner._resolve_mlx_subprocess_env(settings) is None
+    runner._is_hf_model_cached.cache_clear()
 
 
 def test_run_speak_mlx_marks_played_only_when_confirmed(monkeypatch, tmp_path: Path) -> None:

@@ -18,7 +18,7 @@ def _make_executable(path: Path) -> None:
 def _run_resolve_python_bin(env: dict[str, str]) -> subprocess.CompletedProcess[str]:
     command = f"source {shlex.quote(str(SCRIPT_PATH))}; resolve_python_bin"
     return subprocess.run(
-        ["/bin/bash", "-lc", command],
+        ["/bin/bash", "-c", command],
         env=env,
         capture_output=True,
         text=True,

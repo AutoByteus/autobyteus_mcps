@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from datetime import datetime
+import fcntl
 from functools import lru_cache
+import os
 from pathlib import Path
 import shutil
 import subprocess
 import wave
+import time
 from typing import TypedDict
 
 from .config import BackendName, ConfigError, TtsSettings, model_requires_instruct
@@ -38,6 +41,9 @@ class _OutputSignature(TypedDict):
 class _ResolvedOutputPath(TypedDict):
     path: Path
     is_auto_generated: bool
+
+
+_GLOBAL_LOCK_FILE = Path("/tmp/tts_mcp_global_generation.lock")
 
 
 def run_speak(
@@ -181,121 +187,146 @@ def run_speak(
         warnings.append(version_status["message"])
 
     before_signature = _output_signature(resolved_output)
+    generation_env: dict[str, str] | None = None
+    if selection.backend == "mlx_audio":
+        generation_env = _resolve_mlx_subprocess_env(settings=settings)
 
-    if selection.backend == "kokoro_onnx":
-        generation = _run_kokoro_onnx(
-            settings=settings,
-            text=normalized_text,
-            output_path=resolved_output,
-            voice=voice,
-            speed=speed,
-            language_code=language_code,
-        )
-    else:
-        generation = _execute(command=command, timeout_seconds=settings.timeout_seconds)
-    if generation["exit_code"] != 0:
+    lock_fd = _acquire_global_generation_lock(
+        timeout_seconds=settings.process_lock_timeout_seconds
+    )
+    if lock_fd is None:
         return _error_result(
             backend=selection.backend,
             platform_name=selection.host.system,
             machine=selection.host.machine,
-            command=command,
-            output_path=resolved_output,
-            stdout=generation["stdout"],
-            stderr=generation["stderr"],
-            exit_code=generation["exit_code"],
-            error_type=generation["error_type"] or "execution",
-            error_message=generation["error_message"] or "Speech command failed.",
-        )
-
-    played = False
-    playback_command: list[str] | None = None
-
-    after_signature = _output_signature(resolved_output)
-    if after_signature is None or after_signature["size"] <= 44:
-        return _error_result(
-            backend=selection.backend,
-            platform_name=selection.host.system,
-            machine=selection.host.machine,
-            command=command,
-            output_path=resolved_output,
-            stdout=generation["stdout"],
-            stderr=generation["stderr"],
-            exit_code=generation["exit_code"],
-            error_type="execution",
+            error_type="busy",
             error_message=(
-                "Speech command completed but no valid WAV output was produced at "
-                f"{resolved_output}."
-            ),
-        )
-    if before_signature is not None and before_signature == after_signature:
-        return _error_result(
-            backend=selection.backend,
-            platform_name=selection.host.system,
-            machine=selection.host.machine,
-            command=command,
-            output_path=resolved_output,
-            stdout=generation["stdout"],
-            stderr=generation["stderr"],
-            exit_code=generation["exit_code"],
-            error_type="execution",
-            error_message=(
-                "Speech command completed, but output file was not updated. "
-                f"Expected a newly generated WAV at {resolved_output}."
+                "Another speech generation is already running. "
+                "Try again in a few seconds."
             ),
         )
 
-    if play and selection.backend in {"llama_cpp", "kokoro_onnx"} and resolved_output.exists():
-        playback_command = _build_linux_play_command(
-            audio_path=resolved_output,
-            linux_player=settings.linux_player,
-        )
-        if playback_command is None:
-            warnings.append(
-                "Audio generation succeeded, but no Linux audio player is available "
-                "(tried ffplay/aplay/paplay)."
+    try:
+        if selection.backend == "kokoro_onnx":
+            generation = _run_kokoro_onnx(
+                settings=settings,
+                text=normalized_text,
+                output_path=resolved_output,
+                voice=voice,
+                speed=speed,
+                language_code=language_code,
             )
         else:
-            playback = _execute(command=playback_command, timeout_seconds=45)
-            if _linux_playback_confirmed(playback_command, playback):
+            generation = _execute(
+                command=command,
+                timeout_seconds=settings.timeout_seconds,
+                env_overrides=generation_env,
+            )
+        if generation["exit_code"] != 0:
+            return _error_result(
+                backend=selection.backend,
+                platform_name=selection.host.system,
+                machine=selection.host.machine,
+                command=command,
+                output_path=resolved_output,
+                stdout=generation["stdout"],
+                stderr=generation["stderr"],
+                exit_code=generation["exit_code"],
+                error_type=generation["error_type"] or "execution",
+                error_message=generation["error_message"] or "Speech command failed.",
+            )
+
+        played = False
+        playback_command: list[str] | None = None
+
+        after_signature = _output_signature(resolved_output)
+        if after_signature is None or after_signature["size"] <= 44:
+            return _error_result(
+                backend=selection.backend,
+                platform_name=selection.host.system,
+                machine=selection.host.machine,
+                command=command,
+                output_path=resolved_output,
+                stdout=generation["stdout"],
+                stderr=generation["stderr"],
+                exit_code=generation["exit_code"],
+                error_type="execution",
+                error_message=(
+                    "Speech command completed but no valid WAV output was produced at "
+                    f"{resolved_output}."
+                ),
+            )
+        if before_signature is not None and before_signature == after_signature:
+            return _error_result(
+                backend=selection.backend,
+                platform_name=selection.host.system,
+                machine=selection.host.machine,
+                command=command,
+                output_path=resolved_output,
+                stdout=generation["stdout"],
+                stderr=generation["stderr"],
+                exit_code=generation["exit_code"],
+                error_type="execution",
+                error_message=(
+                    "Speech command completed, but output file was not updated. "
+                    f"Expected a newly generated WAV at {resolved_output}."
+                ),
+            )
+
+        if play and selection.backend in {"llama_cpp", "kokoro_onnx"} and resolved_output.exists():
+            playback_command = _build_linux_play_command(
+                audio_path=resolved_output,
+                linux_player=settings.linux_player,
+            )
+            if playback_command is None:
+                warnings.append(
+                    "Audio generation succeeded, but no Linux audio player is available "
+                    "(tried ffplay/aplay/paplay)."
+                )
+            else:
+                playback = _execute(command=playback_command, timeout_seconds=45)
+                if _linux_playback_confirmed(playback_command, playback):
+                    played = True
+                else:
+                    warnings.append(
+                        "Audio generation succeeded, but playback command failed."
+                    )
+
+        if play and selection.backend == "mlx_audio":
+            if _mlx_playback_confirmed(generation):
                 played = True
             else:
                 warnings.append(
-                    "Audio generation succeeded, but playback command failed."
+                    "Audio generation succeeded, but MLX playback could not be confirmed "
+                    "from command output. Check your default audio output device."
                 )
 
-    if play and selection.backend == "mlx_audio":
-        if _mlx_playback_confirmed(generation):
-            played = True
-        else:
-            warnings.append(
-                "Audio generation succeeded, but MLX playback could not be confirmed "
-                "from command output. Check your default audio output device."
-            )
+        if auto_generated_output and settings.delete_auto_output:
+            try:
+                resolved_output.unlink(missing_ok=True)
+            except OSError:
+                warnings.append(
+                    f"Generated audio cleanup failed for {resolved_output}."
+                )
 
-    if auto_generated_output and settings.delete_auto_output:
-        try:
-            resolved_output.unlink(missing_ok=True)
-        except OSError:
-            warnings.append(
-                f"Generated audio cleanup failed for {resolved_output}."
-            )
-
-    return SpeakResult(
-        ok=True,
-        backend=selection.backend,
-        platform=selection.host.system,
-        machine=selection.host.machine,
-        command=command,
-        output_path=str(resolved_output),
-        played=played,
-        playback_command=playback_command,
-        warnings=warnings,
-        stdout=generation["stdout"],
-        stderr=generation["stderr"],
-        exit_code=generation["exit_code"],
-        error_type=None,
-        error_message=None,
-    )
+        return SpeakResult(
+            ok=True,
+            backend=selection.backend,
+            platform=selection.host.system,
+            machine=selection.host.machine,
+            command=command,
+            output_path=str(resolved_output),
+            played=played,
+            playback_command=playback_command,
+            warnings=warnings,
+            stdout=generation["stdout"],
+            stderr=generation["stderr"],
+            exit_code=generation["exit_code"],
+            error_type=None,
+            error_message=None,
+        )
+    finally:
+        _release_global_generation_lock(lock_fd)
 
 
 def _build_mlx_command(
@@ -539,7 +570,16 @@ class _ExecutionResult(TypedDict):
     error_message: str | None
 
 
-def _execute(command: list[str], timeout_seconds: int) -> _ExecutionResult:
+def _execute(
+    command: list[str],
+    timeout_seconds: int,
+    env_overrides: dict[str, str] | None = None,
+) -> _ExecutionResult:
+    merged_env = None
+    if env_overrides:
+        merged_env = os.environ.copy()
+        merged_env.update(env_overrides)
+
     try:
         completed = subprocess.run(
             command,
@@ -547,6 +587,7 @@ def _execute(command: list[str], timeout_seconds: int) -> _ExecutionResult:
             text=True,
             timeout=timeout_seconds,
             check=False,
+            env=merged_env,
         )
     except FileNotFoundError:
         return _ExecutionResult(
@@ -610,6 +651,69 @@ def _clean_output(value: str | None) -> str | None:
         return None
     cleaned = value.strip()
     return cleaned if cleaned else None
+
+
+def _resolve_mlx_subprocess_env(settings: TtsSettings) -> dict[str, str] | None:
+    mode = settings.hf_hub_offline_mode
+    if mode == "true":
+        return {"HF_HUB_OFFLINE": "1"}
+    if mode == "false":
+        return None
+    if _is_hf_model_cached(settings.mlx_model):
+        return {"HF_HUB_OFFLINE": "1"}
+    return None
+
+
+def _acquire_global_generation_lock(timeout_seconds: int) -> int | None:
+    _GLOBAL_LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(_GLOBAL_LOCK_FILE, os.O_CREAT | os.O_RDWR, 0o600)
+    deadline = time.monotonic() + timeout_seconds
+
+    while True:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return fd
+        except BlockingIOError:
+            if time.monotonic() >= deadline:
+                os.close(fd)
+                return None
+            time.sleep(0.1)
+        except OSError:
+            os.close(fd)
+            return None
+
+
+def _release_global_generation_lock(fd: int) -> None:
+    try:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        os.close(fd)
+
+
+@lru_cache(maxsize=32)
+def _is_hf_model_cached(model_id: str) -> bool:
+    if not _looks_like_hf_repo_id(model_id):
+        return False
+
+    cache_root = Path.home() / ".cache" / "huggingface" / "hub"
+    model_cache_dir = cache_root / f"models--{model_id.replace('/', '--')}"
+    snapshots_dir = model_cache_dir / "snapshots"
+    if not snapshots_dir.exists():
+        return False
+
+    try:
+        return any(child.is_dir() for child in snapshots_dir.iterdir())
+    except OSError:
+        return False
+
+
+def _looks_like_hf_repo_id(value: str) -> bool:
+    # Hugging Face repo IDs are like "org/name"; local paths are handled separately.
+    if "://" in value:
+        return False
+    if value.startswith("/") or value.startswith("./") or value.startswith("../"):
+        return False
+    return value.count("/") == 1
 
 
 def _normalize_optional_text(value: str | None) -> str | None:

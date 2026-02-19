@@ -47,6 +47,7 @@ General:
 - `TTS_MCP_BACKEND` (`auto` | `mlx_audio` | `llama_cpp` | `kokoro_onnx`, default `auto`)
 - `TTS_MCP_LINUX_RUNTIME` (`llama_cpp` | `kokoro_onnx`, default `llama_cpp`; used when `TTS_MCP_BACKEND=auto` on Linux)
 - `TTS_MCP_TIMEOUT_SECONDS` (default `180`)
+- `TTS_MCP_PROCESS_LOCK_TIMEOUT_SECONDS` (default `30`; max wait time to acquire the global speech lock)
 - `TTS_MCP_OUTPUT_DIR` (default `outputs`)
 - `TTS_MCP_DELETE_AUTO_OUTPUT` (`true` | `false`, default `true`; deletes auto-generated `speak_*.wav` files after successful playback/generation)
 - `TTS_MCP_LINUX_PLAYER` (`auto` | `ffplay` | `aplay` | `paplay` | `none`)
@@ -54,8 +55,16 @@ General:
 - `TTS_MCP_VERSION_CHECK_TIMEOUT_SECONDS` (default `6`)
 - `TTS_MCP_AUTO_INSTALL_RUNTIME` (`true` | `false`, default `true`)
 - `TTS_MCP_AUTO_INSTALL_LLAMA_ON_MACOS` (`true` | `false`, default `false`)
+- `TTS_MCP_HF_HUB_OFFLINE_MODE` (`auto` | `true` | `false`, default `auto`)
+  - `auto`: if MLX model cache already exists, run MLX command with `HF_HUB_OFFLINE=1` to avoid blocking Hub metadata calls
+  - `true`: always force offline Hub mode for MLX command
+  - `false`: always allow Hub network calls
 - `TTS_MCP_NAME` (default `tts-mcp`)
 - `TTS_MCP_INSTRUCTIONS` (optional)
+
+Concurrency behavior:
+- `speak` uses a global cross-process lock (`/tmp/tts_mcp_global_generation.lock`) so only one generation/playback runs at a time across multiple MCP server processes.
+- If lock acquisition exceeds `TTS_MCP_PROCESS_LOCK_TIMEOUT_SECONDS`, tool returns `ok=false` with a busy reason.
 
 MLX model selection:
 - `TTS_MCP_MLX_MODEL_PRESET` (`kokoro_fast` | `qwen_base_hq` | `qwen_voicedesign_hq`, default `kokoro_fast`)
@@ -217,7 +226,7 @@ python /ABS/PATH/autobyteus_mcps/tts-mcp/scripts/benchmark_mlx_models.py \
   --output-dir /ABS/PATH/autobyteus_mcps/tts-mcp/benchmark/audio_outputs
 ```
 
-Results (`speak(play=false)` end-to-end latency):
+Results (`run_speak(play=false)` internal benchmark path):
 
 | Model | Text | Mean Latency (s) | Median (s) | Approx P95 (s) | Mean Audio (s) | Mean RTF |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |

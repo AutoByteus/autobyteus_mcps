@@ -7,6 +7,7 @@ from typing import Literal, Mapping
 BackendName = Literal["auto", "mlx_audio", "llama_cpp", "kokoro_onnx"]
 LinuxRuntimeName = Literal["llama_cpp", "kokoro_onnx"]
 MlxModelPreset = Literal["kokoro_fast", "qwen_base_hq", "qwen_voicedesign_hq"]
+HfHubOfflineMode = Literal["auto", "true", "false"]
 
 DEFAULT_SERVER_NAME = "tts-mcp"
 DEFAULT_INSTRUCTIONS = (
@@ -61,12 +62,14 @@ class TtsSettings:
     default_backend: BackendName
     linux_runtime: LinuxRuntimeName
     timeout_seconds: int
+    process_lock_timeout_seconds: int
     output_dir: str
     delete_auto_output: bool
     enforce_latest_runtime: bool
     version_check_timeout_seconds: int
     auto_install_runtime: bool
     auto_install_llama_on_macos: bool
+    hf_hub_offline_mode: HfHubOfflineMode
 
     mlx_command: str
     mlx_model_preset: MlxModelPreset
@@ -98,6 +101,10 @@ def load_settings(env: Mapping[str, str] | None = None) -> TtsSettings:
         actual_env.get("TTS_MCP_TIMEOUT_SECONDS", "180"),
         "TTS_MCP_TIMEOUT_SECONDS",
     )
+    process_lock_timeout_seconds = _parse_positive_int(
+        actual_env.get("TTS_MCP_PROCESS_LOCK_TIMEOUT_SECONDS", "30"),
+        "TTS_MCP_PROCESS_LOCK_TIMEOUT_SECONDS",
+    )
     output_dir = actual_env.get("TTS_MCP_OUTPUT_DIR", "outputs").strip() or "outputs"
     delete_auto_output = _parse_bool(
         actual_env.get("TTS_MCP_DELETE_AUTO_OUTPUT", "true"),
@@ -118,6 +125,9 @@ def load_settings(env: Mapping[str, str] | None = None) -> TtsSettings:
     auto_install_llama_on_macos = _parse_bool(
         actual_env.get("TTS_MCP_AUTO_INSTALL_LLAMA_ON_MACOS", "false"),
         "TTS_MCP_AUTO_INSTALL_LLAMA_ON_MACOS",
+    )
+    hf_hub_offline_mode = _parse_hf_hub_offline_mode(
+        actual_env.get("TTS_MCP_HF_HUB_OFFLINE_MODE", "auto")
     )
 
     mlx_command = _require_non_empty(actual_env, "MLX_TTS_COMMAND", default="mlx_audio.tts.generate")
@@ -195,12 +205,14 @@ def load_settings(env: Mapping[str, str] | None = None) -> TtsSettings:
         default_backend=default_backend,
         linux_runtime=linux_runtime,
         timeout_seconds=timeout_seconds,
+        process_lock_timeout_seconds=process_lock_timeout_seconds,
         output_dir=output_dir,
         delete_auto_output=delete_auto_output,
         enforce_latest_runtime=enforce_latest_runtime,
         version_check_timeout_seconds=version_check_timeout_seconds,
         auto_install_runtime=auto_install_runtime,
         auto_install_llama_on_macos=auto_install_llama_on_macos,
+        hf_hub_offline_mode=hf_hub_offline_mode,
         mlx_command=mlx_command,
         mlx_model_preset=mlx_model_preset,
         mlx_model=mlx_model,
@@ -262,6 +274,16 @@ def _parse_linux_player(raw: str) -> Literal["auto", "ffplay", "aplay", "paplay"
     if value not in allowed:
         raise ConfigError(
             "TTS_MCP_LINUX_PLAYER must be one of: auto, ffplay, aplay, paplay, none."
+        )
+    return value  # type: ignore[return-value]
+
+
+def _parse_hf_hub_offline_mode(raw: str) -> HfHubOfflineMode:
+    value = raw.strip().lower()
+    allowed = {"auto", "true", "false"}
+    if value not in allowed:
+        raise ConfigError(
+            "TTS_MCP_HF_HUB_OFFLINE_MODE must be one of: auto, true, false."
         )
     return value  # type: ignore[return-value]
 
