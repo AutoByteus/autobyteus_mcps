@@ -99,7 +99,8 @@ Close tab:
 
 ## Notes
 - The server relies on `brui_core` and Playwright. Ensure Chrome is available and can be launched in remote debugging mode as required by `brui_core`.
-- On Chrome/Chromium 136+ you must set `CHROME_USER_DATA_DIR` to a non-default path for remote debugging to work.
+- If Browser MCP launches Chrome itself on Chrome/Chromium 136+, set `CHROME_USER_DATA_DIR` to a non-default path so remote debugging can start.
+- If you use the AutoByteus Docker browser container (Chrome already started and debug port already exposed), do not set `CHROME_USER_DATA_DIR` in MCP config. Only set `CHROME_REMOTE_DEBUGGING_PORT` to the container's exposed debug port.
 - `tab_id` values are numeric strings with a maximum of 6 digits for readability.
 
 ## Running tests
