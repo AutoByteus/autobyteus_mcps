@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=65", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ssh-mcp"
+version = "0.1.0"
+description = "MCP server that exposes bounded SSH lifecycle tools for reusable remote command sessions"
+authors = [{ name = "Autobyteus" }]
+readme = "README.md"
+requires-python = ">=3.10,<3.14"
+dependencies = [
+  "mcp>=1.13.1",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest>=8.0",
+  "pytest-anyio>=0",
+  "anyio>=4.0",
+]
+
+[project.scripts]
+ssh-mcp-server = "ssh_mcp.server:main"
+
+[tool.pytest.ini_options]
+addopts = "-q"
+markers = [
+  "e2e: Docker-backed end-to-end tests requiring a local Docker engine",
+]
