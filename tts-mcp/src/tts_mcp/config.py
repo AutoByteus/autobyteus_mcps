@@ -38,6 +38,16 @@ SUPPORTED_MLX_MODEL_IDS: tuple[str, ...] = tuple(
     preset[0] for preset in MLX_MODEL_PRESETS.values()
 )
 
+DEFAULT_KOKORO_MODEL_PATH = ".tools/kokoro-current/kokoro-v1.0.int8.onnx"
+DEFAULT_KOKORO_VOICES_PATH = ".tools/kokoro-current/voices-v1.0.bin"
+DEFAULT_KOKORO_DEFAULT_VOICE = "af_heart"
+DEFAULT_KOKORO_DEFAULT_LANGUAGE_CODE = "en-us"
+
+DEFAULT_KOKORO_ZH_MODEL_PATH = ".tools/kokoro-v1.1-zh/kokoro-v1.1-zh.onnx"
+DEFAULT_KOKORO_ZH_VOICES_PATH = ".tools/kokoro-v1.1-zh/voices-v1.1-zh.bin"
+DEFAULT_KOKORO_ZH_VOCAB_CONFIG_PATH = ".tools/kokoro-v1.1-zh/config.json"
+DEFAULT_KOKORO_ZH_DEFAULT_VOICE = "zf_001"
+
 
 class ConfigError(ValueError):
     """Raised when configuration values are invalid."""
@@ -87,6 +97,8 @@ class TtsSettings:
 
     kokoro_model_path: str
     kokoro_voices_path: str
+    kokoro_vocab_config_path: str | None
+    kokoro_misaki_zh_version: str
     kokoro_default_voice: str
     kokoro_default_language_code: str
 
@@ -97,7 +109,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> TtsSettings:
     actual_env = env if env is not None else os.environ
 
     default_backend = _parse_backend(actual_env.get("TTS_MCP_BACKEND", "auto"))
-    linux_runtime = _parse_linux_runtime(actual_env.get("TTS_MCP_LINUX_RUNTIME", "llama_cpp"))
+    linux_runtime = _parse_linux_runtime(actual_env.get("TTS_MCP_LINUX_RUNTIME", "kokoro_onnx"))
     timeout_seconds = _parse_positive_int(
         actual_env.get("TTS_MCP_TIMEOUT_SECONDS", "180"),
         "TTS_MCP_TIMEOUT_SECONDS",
@@ -186,22 +198,28 @@ def load_settings(env: Mapping[str, str] | None = None) -> TtsSettings:
     kokoro_model_path = _require_non_empty(
         actual_env,
         "KOKORO_TTS_MODEL_PATH",
-        default=".tools/kokoro-current/kokoro-v1.0.int8.onnx",
+        default=DEFAULT_KOKORO_MODEL_PATH,
     )
     kokoro_voices_path = _require_non_empty(
         actual_env,
         "KOKORO_TTS_VOICES_PATH",
-        default=".tools/kokoro-current/voices-v1.0.bin",
+        default=DEFAULT_KOKORO_VOICES_PATH,
+    )
+    kokoro_vocab_config_path = _optional_text(actual_env.get("KOKORO_TTS_VOCAB_CONFIG_PATH"))
+    kokoro_misaki_zh_version = _require_non_empty(
+        actual_env,
+        "KOKORO_TTS_MISAKI_ZH_VERSION",
+        default="1.1",
     )
     kokoro_default_voice = _require_non_empty(
         actual_env,
         "KOKORO_TTS_DEFAULT_VOICE",
-        default="af_heart",
+        default=DEFAULT_KOKORO_DEFAULT_VOICE,
     )
     kokoro_default_language_code = _require_non_empty(
         actual_env,
         "KOKORO_TTS_DEFAULT_LANG_CODE",
-        default="en-us",
+        default=DEFAULT_KOKORO_DEFAULT_LANGUAGE_CODE,
     )
 
     linux_player = _parse_linux_player(actual_env.get("TTS_MCP_LINUX_PLAYER", "auto"))
@@ -232,6 +250,8 @@ def load_settings(env: Mapping[str, str] | None = None) -> TtsSettings:
         llama_n_gpu_layers=llama_n_gpu_layers,
         kokoro_model_path=kokoro_model_path,
         kokoro_voices_path=kokoro_voices_path,
+        kokoro_vocab_config_path=kokoro_vocab_config_path,
+        kokoro_misaki_zh_version=kokoro_misaki_zh_version,
         kokoro_default_voice=kokoro_default_voice,
         kokoro_default_language_code=kokoro_default_language_code,
         linux_player=linux_player,

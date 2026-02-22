@@ -41,7 +41,7 @@ Older `0.2.x` builds may fail on Qwen3-TTS models.
 
 General:
 - `TTS_MCP_BACKEND` (`auto` | `mlx_audio` | `llama_cpp` | `kokoro_onnx`, default `auto`)
-- `TTS_MCP_LINUX_RUNTIME` (`llama_cpp` | `kokoro_onnx`, default `llama_cpp`; used when `TTS_MCP_BACKEND=auto` on Linux)
+- `TTS_MCP_LINUX_RUNTIME` (`llama_cpp` | `kokoro_onnx`, default `kokoro_onnx`; used when `TTS_MCP_BACKEND=auto` on Linux)
 - `TTS_MCP_TIMEOUT_SECONDS` (default `180`)
 - `TTS_MCP_PROCESS_LOCK_TIMEOUT_SECONDS` (default `30`; max wait time to acquire the global speech lock)
 - `TTS_MCP_OUTPUT_DIR` (default `outputs`)
@@ -83,9 +83,51 @@ llama.cpp backend:
 Kokoro ONNX backend:
 - `KOKORO_TTS_MODEL_PATH` (default `.tools/kokoro-current/kokoro-v1.0.int8.onnx`)
 - `KOKORO_TTS_VOICES_PATH` (default `.tools/kokoro-current/voices-v1.0.bin`)
+- `KOKORO_TTS_VOCAB_CONFIG_PATH` (optional; required for Kokoro v1.1 Mandarin phonemization)
+- `KOKORO_TTS_MISAKI_ZH_VERSION` (default `1.1`; Misaki Zh phonemizer version)
 - `KOKORO_TTS_DEFAULT_VOICE` (default `af_heart`)
 - `KOKORO_TTS_DEFAULT_LANG_CODE` (default `en-us`)
-- `KOKORO_TTS_MODEL_VARIANT` (installer-only optional: `int8` | `fp16` | `fp16-gpu` | `full`, default `int8`)
+- `KOKORO_TTS_MODEL_VARIANT` (installer-only optional: `int8` | `fp16` | `fp16-gpu` | `full`, default `int8`; only used by `v1_0` install profile)
+- `KOKORO_TTS_PROFILE` (installer-only optional: `v1_0` | `zh_v1_1`; if unset, installer auto-selects by language: `zh` -> `zh_v1_1`, otherwise `v1_0`)
+
+Kokoro Chinese setup (env-only, no extra API params):
+- Simplified default behavior:
+  - If `KOKORO_TTS_DEFAULT_LANG_CODE` (or per-call `language_code`) resolves to Chinese (`zh`/`cmn`) and you did not explicitly set Kokoro model/voices/vocab paths, MCP auto-selects:
+    - `.tools/kokoro-v1.1-zh/kokoro-v1.1-zh.onnx`
+    - `.tools/kokoro-v1.1-zh/voices-v1.1-zh.bin`
+    - `.tools/kokoro-v1.1-zh/config.json`
+    - default voice `zf_001`
+  - If language is not Chinese, defaults remain English (`en-us`, `af_heart`, v1.0 paths).
+- Quick install (recommended):
+
+```bash
+scripts/install_tts_runtime.sh --linux-runtime kokoro_onnx --lang zh
+```
+
+- Minimal MCP env for Chinese:
+  - `TTS_MCP_LINUX_RUNTIME=kokoro_onnx`
+  - `KOKORO_TTS_DEFAULT_LANG_CODE=zh`
+- Optional explicit overrides:
+  - `KOKORO_TTS_MODEL_PATH=.tools/kokoro-v1.1-zh/kokoro-v1.1-zh.onnx`
+  - `KOKORO_TTS_VOICES_PATH=.tools/kokoro-v1.1-zh/voices-v1.1-zh.bin`
+  - `KOKORO_TTS_VOCAB_CONFIG_PATH=.tools/kokoro-v1.1-zh/config.json`
+  - `KOKORO_TTS_DEFAULT_VOICE=zf_001`
+  - `KOKORO_TTS_MISAKI_ZH_VERSION=1.1`
+- Common aliases are normalized for convenience: `zh`, `zh-cn`, `zh_hans`, and `mandarin` map to `cmn`.
+- List available voices from your installed model:
+
+```bash
+uv run python - <<'PY'
+from pathlib import Path
+from kokoro_onnx import Kokoro
+k = Kokoro(
+    str(Path(".tools/kokoro-v1.1-zh/kokoro-v1.1-zh.onnx").resolve()),
+    str(Path(".tools/kokoro-v1.1-zh/voices-v1.1-zh.bin").resolve()),
+    vocab_config=str(Path(".tools/kokoro-v1.1-zh/config.json").resolve()),
+)
+print("\n".join(k.get_voices()))
+PY
+```
 
 ## Install
 
@@ -105,6 +147,15 @@ scripts/install_tts_runtime.sh
 
 # Linux runtime override for manual installer
 scripts/install_tts_runtime.sh --linux-runtime kokoro_onnx
+
+# Linux Kokoro Mandarin install (auto profile by language)
+scripts/install_tts_runtime.sh --linux-runtime kokoro_onnx --lang zh
+
+# Linux Kokoro English install (auto profile by language)
+scripts/install_tts_runtime.sh --linux-runtime kokoro_onnx --lang en
+
+# Explicit profile override (advanced)
+scripts/install_tts_runtime.sh --linux-runtime kokoro_onnx --kokoro-profile zh_v1_1
 ```
 
 Platform-specific installers:
@@ -121,12 +172,20 @@ scripts/install_llama_tts_linux.sh
 
 # Linux: Kokoro ONNX runtime + model assets
 scripts/install_kokoro_onnx_linux.sh
+
+# Linux: Kokoro Mandarin install via language (recommended)
+scripts/install_kokoro_onnx_linux.sh --lang zh
+
+# Linux: Kokoro Mandarin profile (advanced explicit profile)
+scripts/install_kokoro_onnx_linux.sh --profile zh_v1_1
 ```
 
 Linux installer note:
 - Requires `python3` (preferred) or `python` in `PATH`.
 - Optional override: set `PYTHON_BIN` to a specific Python executable.
-- `install_kokoro_onnx_linux.sh` installs `kokoro-onnx` in the current Python environment and downloads model assets.
+- `install_kokoro_onnx_linux.sh` installs `kokoro-onnx` and downloads model assets for the selected profile.
+- `zh_v1_1` profile also installs `misaki-fork[zh]` and downloads Mandarin vocab config.
+- `--lang zh` auto-selects `zh_v1_1`; `--lang en` auto-selects `v1_0`.
 
 Linux playback routing note:
 - For PipeWire/PulseAudio desktops, prefer `TTS_MCP_LINUX_PLAYER=paplay` to follow the default desktop sink.
@@ -142,6 +201,33 @@ python -m tts_mcp.server
 ```
 
 ## MCP Config Example (Codex/Cursor style)
+
+Linux Kokoro (recommended simple setup):
+
+```toml
+[mcp_servers.tts]
+command = "uv"
+args = [
+  "--directory",
+  "/ABS/PATH/autobyteus_mcps/tts-mcp",
+  "run",
+  "python",
+  "-m",
+  "tts_mcp.server",
+]
+
+[mcp_servers.tts.env]
+TTS_MCP_BACKEND = "kokoro_onnx"
+TTS_MCP_LINUX_RUNTIME = "kokoro_onnx"
+TTS_MCP_LINUX_PLAYER = "paplay"
+KOKORO_TTS_DEFAULT_LANG_CODE = "zh"  # switch to "en-us" for English default
+TTS_MCP_ENFORCE_LATEST = "false"
+XDG_RUNTIME_DIR = "/run/user/<uid>"
+PULSE_SERVER = "unix:/run/user/<uid>/pulse/native"
+DBUS_SESSION_BUS_ADDRESS = "unix:path=/run/user/<uid>/bus"
+```
+
+MLX Audio (Apple Silicon macOS, optional):
 
 ```toml
 [mcp_servers.tts]
@@ -188,6 +274,13 @@ uv run python -m pytest -q tests/test_real_mcp_speak_tool.py
 ```
 
 This verifies end-to-end MCP tool invocation and confirms a real WAV is produced in `TTS_MCP_OUTPUT_DIR`.
+
+Real Linux Kokoro Chinese integration test (uses MCP `speak` tool + env defaults):
+
+```bash
+TTS_MCP_RUN_REAL_LINUX_KOKORO_CN=1 \
+uv run python -m pytest -q tests/test_real_linux_kokoro_chinese.py
+```
 
 ## Runtime Version Policy
 

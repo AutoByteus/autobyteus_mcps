@@ -4,7 +4,9 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 INSTALL_MAC_LLAMA="false"
-LINUX_RUNTIME="${TTS_MCP_LINUX_RUNTIME:-llama_cpp}"
+LINUX_RUNTIME="${TTS_MCP_LINUX_RUNTIME:-kokoro_onnx}"
+KOKORO_PROFILE="${KOKORO_TTS_PROFILE:-}"
+KOKORO_LANG="${KOKORO_TTS_DEFAULT_LANG_CODE:-}"
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --with-llama-macos)
@@ -18,14 +20,34 @@ while [ "$#" -gt 0 ]; do
       fi
       LINUX_RUNTIME="$1"
       ;;
+    --kokoro-profile)
+      shift
+      if [ "$#" -eq 0 ]; then
+        echo "Missing value for --kokoro-profile (v1_0|zh_v1_1)" >&2
+        exit 1
+      fi
+      KOKORO_PROFILE="$1"
+      ;;
+    --lang)
+      shift
+      if [ "$#" -eq 0 ]; then
+        echo "Missing value for --lang (en|zh)" >&2
+        exit 1
+      fi
+      KOKORO_LANG="$1"
+      ;;
     -h|--help)
       cat <<'EOF'
 Usage:
-  scripts/install_tts_runtime.sh [--with-llama-macos] [--linux-runtime llama_cpp|kokoro_onnx]
+  scripts/install_tts_runtime.sh [--with-llama-macos] [--linux-runtime llama_cpp|kokoro_onnx] [--lang en|zh] [--kokoro-profile v1_0|zh_v1_1]
 
 Behavior:
   - macOS arm64: installs latest MLX Audio runtime (required), and optionally llama-tts
-  - Linux: installs runtime selected by --linux-runtime (default: TTS_MCP_LINUX_RUNTIME or llama_cpp)
+  - Linux: installs runtime selected by --linux-runtime (default: TTS_MCP_LINUX_RUNTIME or kokoro_onnx)
+  - When Linux runtime is kokoro_onnx:
+      - --lang zh auto-selects Mandarin install profile (zh_v1_1)
+      - --lang en auto-selects English install profile (v1_0)
+      - --kokoro-profile overrides language auto-selection
 EOF
       exit 0
       ;;
@@ -56,7 +78,14 @@ if [ "$OS" = "Linux" ]; then
       "$ROOT_DIR/scripts/install_llama_tts_linux.sh"
       ;;
     kokoro_onnx)
-      "$ROOT_DIR/scripts/install_kokoro_onnx_linux.sh"
+      kokoro_args=()
+      if [ -n "$KOKORO_LANG" ]; then
+        kokoro_args+=(--lang "$KOKORO_LANG")
+      fi
+      if [ -n "$KOKORO_PROFILE" ]; then
+        kokoro_args+=(--profile "$KOKORO_PROFILE")
+      fi
+      "$ROOT_DIR/scripts/install_kokoro_onnx_linux.sh" "${kokoro_args[@]}"
       ;;
     *)
       echo "Unsupported Linux runtime: $LINUX_RUNTIME (allowed: llama_cpp, kokoro_onnx)" >&2

@@ -680,3 +680,165 @@ def test_run_speak_blocks_when_runtime_freshness_is_unknown_and_enforced(monkeyp
 
     assert result["ok"] is False
     assert result["error_type"] == "dependency"
+
+
+def test_resolve_kokoro_language_code_maps_common_chinese_aliases() -> None:
+    assert runner._resolve_kokoro_language_code("zh", "en-us") == "cmn"
+    assert runner._resolve_kokoro_language_code("zh-cn", "en-us") == "cmn"
+    assert runner._resolve_kokoro_language_code("zh_hans", "en-us") == "cmn"
+    assert runner._resolve_kokoro_language_code("mandarin", "en-us") == "cmn"
+
+
+def test_resolve_kokoro_language_code_keeps_supported_values() -> None:
+    assert runner._resolve_kokoro_language_code(None, "cmn") == "cmn"
+    assert runner._resolve_kokoro_language_code("en-us", "cmn") == "en-us"
+
+
+def test_resolve_kokoro_runtime_config_auto_switches_to_zh_profile() -> None:
+    settings = load_settings({"KOKORO_TTS_DEFAULT_LANG_CODE": "zh"})
+
+    resolved = runner._resolve_kokoro_runtime_config(
+        settings=settings,
+        selected_language="cmn",
+        requested_voice=None,
+    )
+
+    assert resolved["model_path"].endswith("kokoro-v1.1-zh.onnx")
+    assert resolved["voices_path"].endswith("voices-v1.1-zh.bin")
+    assert resolved["vocab_config_path"] and resolved["vocab_config_path"].endswith("config.json")
+    assert resolved["selected_voice"] == "zf_001"
+
+
+def test_resolve_kokoro_runtime_config_keeps_custom_default_voice_for_zh() -> None:
+    settings = load_settings(
+        {
+            "KOKORO_TTS_DEFAULT_LANG_CODE": "zh",
+            "KOKORO_TTS_DEFAULT_VOICE": "zf_008",
+        }
+    )
+
+    resolved = runner._resolve_kokoro_runtime_config(
+        settings=settings,
+        selected_language="cmn",
+        requested_voice=None,
+    )
+
+    assert resolved["selected_voice"] == "zf_008"
+
+
+def test_run_kokoro_onnx_uses_misaki_when_vocab_configured(monkeypatch, tmp_path: Path) -> None:
+    settings = load_settings(
+        {
+            "KOKORO_TTS_VOCAB_CONFIG_PATH": str(tmp_path / "config.json"),
+            "KOKORO_TTS_DEFAULT_LANG_CODE": "cmn",
+            "KOKORO_TTS_DEFAULT_VOICE": "zf_001",
+        }
+    )
+    (tmp_path / "config.json").write_text("{}", encoding="utf-8")
+
+    captured: dict[str, object] = {}
+
+    class _FakeKokoro:
+        def create(self, **kwargs):
+            captured.update(kwargs)
+            return [0.0] * 24000, 24000
+
+    monkeypatch.setattr(runner, "_load_kokoro_runtime", lambda **_: _FakeKokoro())
+    monkeypatch.setattr(
+        runner,
+        "_load_misaki_zh_g2p",
+        lambda **_: (lambda text: ("pʰ o n e m e s", None)),
+    )
+
+    result = runner._run_kokoro_onnx(
+        settings=settings,
+        text="你好",
+        output_path=tmp_path / "misaki.wav",
+        voice=None,
+        speed=1.0,
+        language_code="cmn",
+    )
+
+    assert result["exit_code"] == 0
+    assert captured["text"] == "pʰ o n e m e s"
+    assert captured["is_phonemes"] is True
+    assert captured["voice"] == "zf_001"
+
+
+def test_run_kokoro_onnx_auto_uses_zh_defaults_from_language(monkeypatch, tmp_path: Path) -> None:
+    settings = load_settings({"KOKORO_TTS_DEFAULT_LANG_CODE": "zh"})
+    captured: dict[str, object] = {}
+    loader_inputs: dict[str, str | None] = {}
+
+    class _FakeKokoro:
+        def create(self, **kwargs):
+            captured.update(kwargs)
+            return [0.0] * 24000, 24000
+
+    def fake_loader(**kwargs):
+        loader_inputs["model_path"] = str(kwargs["model_path"])
+        loader_inputs["voices_path"] = str(kwargs["voices_path"])
+        vocab = kwargs.get("vocab_config_path")
+        loader_inputs["vocab_config_path"] = str(vocab) if vocab is not None else None
+        return _FakeKokoro()
+
+    monkeypatch.setattr(runner, "_load_kokoro_runtime", fake_loader)
+    monkeypatch.setattr(
+        runner,
+        "_load_misaki_zh_g2p",
+        lambda **_: (lambda text: ("pʰ o n e m e s", None)),
+    )
+
+    result = runner._run_kokoro_onnx(
+        settings=settings,
+        text="你好",
+        output_path=tmp_path / "auto_zh.wav",
+        voice=None,
+        speed=1.0,
+        language_code=None,
+    )
+
+    assert result["exit_code"] == 0
+    assert loader_inputs["model_path"] and "kokoro-v1.1-zh.onnx" in loader_inputs["model_path"]
+    assert loader_inputs["voices_path"] and "voices-v1.1-zh.bin" in loader_inputs["voices_path"]
+    assert loader_inputs["vocab_config_path"] and "config.json" in loader_inputs["vocab_config_path"]
+    assert captured["voice"] == "zf_001"
+    assert captured["is_phonemes"] is True
+
+
+def test_run_kokoro_onnx_returns_dependency_error_when_misaki_missing(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    settings = load_settings(
+        {
+            "KOKORO_TTS_VOCAB_CONFIG_PATH": str(tmp_path / "config.json"),
+            "KOKORO_TTS_DEFAULT_LANG_CODE": "cmn",
+            "KOKORO_TTS_DEFAULT_VOICE": "zf_001",
+        }
+    )
+    (tmp_path / "config.json").write_text("{}", encoding="utf-8")
+
+    class _FakeKokoro:
+        def create(self, **kwargs):
+            return [0.0] * 24000, 24000
+
+    monkeypatch.setattr(runner, "_load_kokoro_runtime", lambda **_: _FakeKokoro())
+    monkeypatch.setattr(
+        runner,
+        "_load_misaki_zh_g2p",
+        lambda **_: (_ for _ in ()).throw(RuntimeError("misaki missing")),
+    )
+
+    result = runner._run_kokoro_onnx(
+        settings=settings,
+        text="你好",
+        output_path=tmp_path / "misaki_missing.wav",
+        voice=None,
+        speed=1.0,
+        language_code="cmn",
+    )
+
+    assert result["exit_code"] is None
+    assert result["error_type"] == "dependency"
+    assert "misaki missing" in (result["error_message"] or "")

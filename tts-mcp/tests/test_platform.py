@@ -26,7 +26,7 @@ def test_select_backend_auto_prefers_mlx_on_apple_silicon() -> None:
     assert selection.command == settings.mlx_command
 
 
-def test_select_backend_auto_uses_llama_on_linux_nvidia() -> None:
+def test_select_backend_auto_uses_kokoro_on_linux_by_default() -> None:
     settings = load_settings({})
     host = HostInfo(
         system="Linux",
@@ -38,12 +38,12 @@ def test_select_backend_auto_uses_llama_on_linux_nvidia() -> None:
 
     selection = select_backend(settings=settings, host=host, command_resolver=_resolver_ok)
 
-    assert selection.backend == "llama_cpp"
-    assert selection.command == settings.llama_command
+    assert selection.backend == "kokoro_onnx"
+    assert selection.command == "kokoro_onnx"
 
 
-def test_select_backend_auto_rejects_unsupported_host() -> None:
-    settings = load_settings({})
+def test_select_backend_auto_rejects_llama_on_host_without_nvidia() -> None:
+    settings = load_settings({"TTS_MCP_LINUX_RUNTIME": "llama_cpp"})
     host = HostInfo(
         system="Linux",
         machine="x86_64",

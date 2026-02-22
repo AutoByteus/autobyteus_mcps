@@ -6,7 +6,15 @@ import shutil
 import subprocess
 import sys
 
-from .config import TtsSettings
+from .config import (
+    DEFAULT_KOKORO_DEFAULT_LANGUAGE_CODE,
+    DEFAULT_KOKORO_MODEL_PATH,
+    DEFAULT_KOKORO_VOICES_PATH,
+    DEFAULT_KOKORO_ZH_MODEL_PATH,
+    DEFAULT_KOKORO_ZH_VOCAB_CONFIG_PATH,
+    DEFAULT_KOKORO_ZH_VOICES_PATH,
+    TtsSettings,
+)
 from .platform import detect_host
 
 
@@ -38,11 +46,15 @@ def bootstrap_runtime(settings: TtsSettings) -> list[str]:
             notes.append("Installed llama-tts runtime automatically.")
 
     if host.is_linux and linux_target_runtime == "kokoro_onnx":
+        kokoro_profile = _resolve_kokoro_install_profile(settings)
         if (
             not _python_module_available("kokoro_onnx")
             or not _kokoro_assets_available(root_dir=root_dir, settings=settings)
         ):
-            _run_install_script(root_dir / "scripts" / "install_kokoro_onnx_linux.sh")
+            _run_install_script_with_env(
+                root_dir / "scripts" / "install_kokoro_onnx_linux.sh",
+                {"KOKORO_TTS_PROFILE": kokoro_profile},
+            )
             notes.append("Installed Kokoro ONNX runtime automatically.")
 
     if host.is_macos_arm64 and settings.auto_install_llama_on_macos:
@@ -66,9 +78,65 @@ def _linux_runtime_target(settings: TtsSettings) -> str | None:
 
 
 def _kokoro_assets_available(root_dir: Path, settings: TtsSettings) -> bool:
-    model_path = _resolve_runtime_path(root_dir, settings.kokoro_model_path)
-    voices_path = _resolve_runtime_path(root_dir, settings.kokoro_voices_path)
-    return model_path.exists() and voices_path.exists()
+    model_path_value, voices_path_value, vocab_path_value = _resolve_kokoro_assets(settings)
+    model_path = _resolve_runtime_path(root_dir, model_path_value)
+    voices_path = _resolve_runtime_path(root_dir, voices_path_value)
+    if not (model_path.exists() and voices_path.exists()):
+        return False
+
+    if vocab_path_value:
+        vocab_config_path = _resolve_runtime_path(root_dir, vocab_path_value)
+        return vocab_config_path.exists()
+
+    return True
+
+
+def _resolve_kokoro_install_profile(settings: TtsSettings) -> str:
+    if _should_use_kokoro_zh_defaults(settings):
+        return "zh_v1_1"
+    return "v1_0"
+
+
+def _resolve_kokoro_assets(settings: TtsSettings) -> tuple[str, str, str | None]:
+    if _should_use_kokoro_zh_defaults(settings):
+        return (
+            DEFAULT_KOKORO_ZH_MODEL_PATH,
+            DEFAULT_KOKORO_ZH_VOICES_PATH,
+            DEFAULT_KOKORO_ZH_VOCAB_CONFIG_PATH,
+        )
+
+    auto_vocab_for_zh_profile = (
+        _normalize_kokoro_lang(settings.kokoro_default_language_code) in {"cmn", "z"}
+        and settings.kokoro_vocab_config_path is None
+        and settings.kokoro_model_path == DEFAULT_KOKORO_ZH_MODEL_PATH
+        and settings.kokoro_voices_path == DEFAULT_KOKORO_ZH_VOICES_PATH
+    )
+    vocab_path = (
+        DEFAULT_KOKORO_ZH_VOCAB_CONFIG_PATH
+        if auto_vocab_for_zh_profile
+        else settings.kokoro_vocab_config_path
+    )
+    return (settings.kokoro_model_path, settings.kokoro_voices_path, vocab_path)
+
+
+def _should_use_kokoro_zh_defaults(settings: TtsSettings) -> bool:
+    return (
+        _normalize_kokoro_lang(settings.kokoro_default_language_code) in {"cmn", "z"}
+        and settings.kokoro_model_path == DEFAULT_KOKORO_MODEL_PATH
+        and settings.kokoro_voices_path == DEFAULT_KOKORO_VOICES_PATH
+        and settings.kokoro_vocab_config_path is None
+    )
+
+
+def _normalize_kokoro_lang(value: str) -> str:
+    normalized = (value or DEFAULT_KOKORO_DEFAULT_LANGUAGE_CODE).strip().lower().replace("_", "-")
+    aliases = {
+        "zh": "cmn",
+        "zh-cn": "cmn",
+        "zh-hans": "cmn",
+        "mandarin": "cmn",
+    }
+    return aliases.get(normalized, normalized)
 
 
 def _resolve_runtime_path(root_dir: Path, value: str) -> Path:
@@ -123,3 +191,19 @@ def _run_install_script(script_path: Path) -> None:
             f"Runtime auto-install failed via {script_path.name} (exit {completed.returncode}). "
             f"{output}"
         )
+
+
+def _run_install_script_with_env(script_path: Path, extra_env: dict[str, str]) -> None:
+    previous: dict[str, str | None] = {
+        key: os.environ.get(key)
+        for key in extra_env
+    }
+    os.environ.update(extra_env)
+    try:
+        _run_install_script(script_path)
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value

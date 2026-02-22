@@ -11,7 +11,19 @@ import wave
 import time
 from typing import TypedDict
 
-from .config import BackendName, ConfigError, TtsSettings, model_requires_instruct
+from .config import (
+    BackendName,
+    ConfigError,
+    DEFAULT_KOKORO_DEFAULT_VOICE,
+    DEFAULT_KOKORO_MODEL_PATH,
+    DEFAULT_KOKORO_VOICES_PATH,
+    DEFAULT_KOKORO_ZH_DEFAULT_VOICE,
+    DEFAULT_KOKORO_ZH_MODEL_PATH,
+    DEFAULT_KOKORO_ZH_VOCAB_CONFIG_PATH,
+    DEFAULT_KOKORO_ZH_VOICES_PATH,
+    TtsSettings,
+    model_requires_instruct,
+)
 from .platform import BackendSelectionError, select_backend
 from .version_check import check_backend_runtime_version
 
@@ -44,6 +56,21 @@ class _ResolvedOutputPath(TypedDict):
 
 
 _GLOBAL_LOCK_FILE = Path("/tmp/tts_mcp_global_generation.lock")
+_KOKORO_LANGUAGE_ALIASES: dict[str, str] = {
+    "zh": "cmn",
+    "zh-cn": "cmn",
+    "zh-hans": "cmn",
+    "zh_cn": "cmn",
+    "zh_hans": "cmn",
+    "mandarin": "cmn",
+}
+
+
+class _KokoroRuntimeConfig(TypedDict):
+    model_path: str
+    voices_path: str
+    vocab_config_path: str | None
+    selected_voice: str
 
 
 def run_speak(
@@ -427,10 +454,25 @@ def _run_kokoro_onnx(
             error_message=f"numpy dependency is unavailable for kokoro_onnx backend: {exc}",
         )
 
+    selected_language = _resolve_kokoro_language_code(
+        language_code=language_code,
+        default_language_code=settings.kokoro_default_language_code,
+    )
+    runtime_config = _resolve_kokoro_runtime_config(
+        settings=settings,
+        selected_language=selected_language,
+        requested_voice=voice,
+    )
+
     try:
         kokoro = _load_kokoro_runtime(
-            model_path=_resolve_runtime_path(settings.kokoro_model_path),
-            voices_path=_resolve_runtime_path(settings.kokoro_voices_path),
+            model_path=_resolve_runtime_path(runtime_config["model_path"]),
+            voices_path=_resolve_runtime_path(runtime_config["voices_path"]),
+            vocab_config_path=(
+                _resolve_runtime_path(runtime_config["vocab_config_path"])
+                if runtime_config["vocab_config_path"]
+                else None
+            ),
         )
     except Exception as exc:
         return _ExecutionResult(
@@ -441,17 +483,36 @@ def _run_kokoro_onnx(
             error_message=str(exc),
         )
 
-    selected_voice = _normalize_optional_text(voice) or settings.kokoro_default_voice
-    selected_language = (
-        _normalize_optional_text(language_code) or settings.kokoro_default_language_code
+    selected_voice = runtime_config["selected_voice"]
+    use_misaki_zh = _should_use_kokoro_misaki_zh(
+        selected_language=selected_language,
+        vocab_config_path=runtime_config["vocab_config_path"],
     )
+
+    synthesis_text = text
+    create_kwargs: dict[str, object] = {}
+    if use_misaki_zh:
+        try:
+            g2p = _load_misaki_zh_g2p(version=settings.kokoro_misaki_zh_version)
+        except Exception as exc:
+            return _ExecutionResult(
+                stdout=None,
+                stderr=None,
+                exit_code=None,
+                error_type="dependency",
+                error_message=str(exc),
+            )
+        synthesis_text, _ = g2p(text)
+        create_kwargs["is_phonemes"] = True
+    else:
+        create_kwargs["lang"] = selected_language
 
     try:
         samples, sample_rate = kokoro.create(
-            text=text,
+            text=synthesis_text,
             voice=selected_voice,
             speed=speed,
-            lang=selected_language,
+            **create_kwargs,
         )
         audio = np.asarray(samples, dtype=np.float32)
         audio = np.clip(audio, -1.0, 1.0)
@@ -472,7 +533,10 @@ def _run_kokoro_onnx(
         )
 
     return _ExecutionResult(
-        stdout=f"kokoro_onnx generated voice={selected_voice} lang={selected_language}",
+        stdout=(
+            f"kokoro_onnx generated voice={selected_voice} lang={selected_language} "
+            f"misaki_zh={use_misaki_zh}"
+        ),
         stderr=None,
         exit_code=0,
         error_type=None,
@@ -480,8 +544,12 @@ def _run_kokoro_onnx(
     )
 
 
-@lru_cache(maxsize=2)
-def _load_kokoro_runtime(model_path: Path, voices_path: Path):
+@lru_cache(maxsize=4)
+def _load_kokoro_runtime(
+    model_path: Path,
+    voices_path: Path,
+    vocab_config_path: Path | None,
+):
     if not model_path.exists():
         raise RuntimeError(
             f"Kokoro model file not found: {model_path}. "
@@ -492,6 +560,11 @@ def _load_kokoro_runtime(model_path: Path, voices_path: Path):
             f"Kokoro voices file not found: {voices_path}. "
             "Run scripts/install_kokoro_onnx_linux.sh or set KOKORO_TTS_VOICES_PATH."
         )
+    if vocab_config_path is not None and not vocab_config_path.exists():
+        raise RuntimeError(
+            f"Kokoro vocab config file not found: {vocab_config_path}. "
+            "Set KOKORO_TTS_VOCAB_CONFIG_PATH to a valid file path."
+        )
 
     try:
         from kokoro_onnx import Kokoro  # type: ignore
@@ -501,7 +574,76 @@ def _load_kokoro_runtime(model_path: Path, voices_path: Path):
             "Install with: pip install --upgrade kokoro-onnx"
         ) from exc
 
-    return Kokoro(str(model_path), str(voices_path))
+    kwargs: dict[str, str] = {}
+    if vocab_config_path is not None:
+        kwargs["vocab_config"] = str(vocab_config_path)
+    return Kokoro(str(model_path), str(voices_path), **kwargs)
+
+
+def _resolve_kokoro_runtime_config(
+    settings: TtsSettings,
+    selected_language: str,
+    requested_voice: str | None,
+) -> _KokoroRuntimeConfig:
+    normalized_voice = _normalize_optional_text(requested_voice)
+    if normalized_voice:
+        selected_voice = normalized_voice
+    else:
+        selected_voice = settings.kokoro_default_voice
+
+    default_paths_in_use = (
+        settings.kokoro_model_path == DEFAULT_KOKORO_MODEL_PATH
+        and settings.kokoro_voices_path == DEFAULT_KOKORO_VOICES_PATH
+        and settings.kokoro_vocab_config_path is None
+    )
+    language_is_chinese = selected_language.strip().lower() in {"cmn", "z"}
+
+    if language_is_chinese and default_paths_in_use:
+        if normalized_voice is None and settings.kokoro_default_voice == DEFAULT_KOKORO_DEFAULT_VOICE:
+            selected_voice = DEFAULT_KOKORO_ZH_DEFAULT_VOICE
+        return _KokoroRuntimeConfig(
+            model_path=DEFAULT_KOKORO_ZH_MODEL_PATH,
+            voices_path=DEFAULT_KOKORO_ZH_VOICES_PATH,
+            vocab_config_path=DEFAULT_KOKORO_ZH_VOCAB_CONFIG_PATH,
+            selected_voice=selected_voice,
+        )
+
+    auto_vocab_for_zh_profile = (
+        language_is_chinese
+        and settings.kokoro_vocab_config_path is None
+        and settings.kokoro_model_path == DEFAULT_KOKORO_ZH_MODEL_PATH
+        and settings.kokoro_voices_path == DEFAULT_KOKORO_ZH_VOICES_PATH
+    )
+    return _KokoroRuntimeConfig(
+        model_path=settings.kokoro_model_path,
+        voices_path=settings.kokoro_voices_path,
+        vocab_config_path=(
+            DEFAULT_KOKORO_ZH_VOCAB_CONFIG_PATH
+            if auto_vocab_for_zh_profile
+            else settings.kokoro_vocab_config_path
+        ),
+        selected_voice=selected_voice,
+    )
+
+
+def _should_use_kokoro_misaki_zh(
+    selected_language: str,
+    vocab_config_path: str | None,
+) -> bool:
+    return bool(vocab_config_path) and selected_language.strip().lower() in {"cmn", "z"}
+
+
+@lru_cache(maxsize=2)
+def _load_misaki_zh_g2p(version: str):
+    try:
+        from misaki import zh  # type: ignore
+    except Exception as exc:
+        raise RuntimeError(
+            "misaki-fork[zh] package is not installed for Kokoro Chinese phonemization. "
+            "Install with: pip install --upgrade 'misaki-fork[zh]'"
+        ) from exc
+
+    return zh.ZHG2P(version=version)
 
 
 def _resolve_runtime_path(value: str) -> Path:
@@ -741,6 +883,15 @@ def _resolve_mlx_language_code(
     if model_id == "mlx-community/Kokoro-82M-bf16" and resolved.lower() == "en":
         return "a"
     return resolved
+
+
+def _resolve_kokoro_language_code(
+    language_code: str | None,
+    default_language_code: str,
+) -> str:
+    resolved = (language_code or default_language_code).strip()
+    normalized = resolved.lower().replace("_", "-")
+    return _KOKORO_LANGUAGE_ALIASES.get(normalized, resolved)
 
 
 def _output_signature(path: Path) -> _OutputSignature | None:
